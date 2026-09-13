@@ -633,8 +633,7 @@ table.compact { min-width: 0; }
 .fill-adults { fill: var(--adult-tone); }
 .fill-cat-admission, .cat-admission { fill: var(--pink-strong); background: var(--pink-strong); }
 .fill-cat-party, .cat-party { fill: var(--lilac-strong); background: var(--lilac-strong); }
-.fill-cat-food, .cat-food { fill: var(--lemon-strong); background: var(--lemon-strong); }
-.fill-cat-retail, .cat-retail { fill: var(--sky-strong); background: var(--sky-strong); }
+.fill-cat-stock, .cat-stock { fill: var(--lemon-strong); background: var(--lemon-strong); }
 .fill-cat-membership, .cat-membership { fill: var(--lime-strong); background: var(--lime-strong); }
 .fill-cat-other, .cat-other { fill: var(--adult-tone); background: var(--adult-tone); }
 

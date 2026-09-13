@@ -88,8 +88,7 @@
   const CATEGORY_LABELS = {
     admission: 'Admission',
     party: 'Parties',
-    food: 'Stock check',
-    retail: 'Retail',
+    stock: 'Total stock',
     membership: 'Memberships',
     other: 'Fees and other',
   };
@@ -478,10 +477,13 @@
       + `<span class="info-tip" id="${id}" role="note" hidden>${esc(entry.info)}${extra ? ` ${esc(extra)}` : ''}</span>`;
   }
 
-  /** The ROLLER product groups counted as stock check, named in its popover. */
-  function stockGroups(data) {
-    const groups = ((data && data.category_groups) || {}).food || [];
-    return groups.length ? `ROLLER product groups: ${groups.join(', ')}.` : '';
+  /** Total stock's popover detail: the day's food and drink and retail amounts, and the ROLLER product groups. */
+  function stockDetail(data, day) {
+    const split = (day && day.stock_split) || {};
+    const amounts = isNum(split.food) || isNum(split.retail)
+      ? `This day: food and drink ${fmtCents(split.food || 0)}, retail ${fmtCents(split.retail || 0)}.` : '';
+    const groups = ((data && data.category_groups) || {}).stock || [];
+    return [amounts, groups.length ? `ROLLER product groups: ${groups.join(', ')}.` : ''].filter(Boolean).join(' ');
   }
 
   function closeInfo(except) {
@@ -815,7 +817,7 @@
     const before = (lastWeek && lastWeek.revenue_by_category) || {};
     const gross = Object.values(categories).reduce((sum, v) => sum + (v || 0), 0);
     const names = Object.keys({ ...categories, ...before }).sort((a, b) => (categories[b] || 0) - (categories[a] || 0));
-    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}${name === 'food' ? infoTip('stock_check', stockGroups(data)) : ''}</td><td>${fmtMoney(categories[name] || 0)}</td>
+    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}${name === 'stock' ? infoTip('total_stock', stockDetail(data, day)) : ''}</td><td>${fmtMoney(categories[name] || 0)}</td>
       <td>${gross ? fmtPct(((categories[name] || 0) / gross) * 100) : DASH}</td>
       <td>${lastWeek ? fmtMoney(before[name] || 0) : DASH}</td>
       <td>${lastWeek ? fmtSigned((categories[name] || 0) - (before[name] || 0), fmtMoney) : DASH}</td></tr>`).join('');
@@ -1497,7 +1499,7 @@
   // ------------------------------------------------------------------ trend figures
 
   const FIG = { w: 520, h: 230, left: 48, right: 14, top: 18, bottom: 38 };
-  const CATEGORY_ORDER = ['admission', 'party', 'food', 'retail', 'membership', 'other'];
+  const CATEGORY_ORDER = ['admission', 'party', 'stock', 'membership', 'other'];
 
   function niceMax(value) {
     if (!(value > 0)) return 1;
