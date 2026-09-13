@@ -57,9 +57,8 @@
   ];
   const MODE_NAMES = { morning: 'Morning report', midday: 'Mid-day check-in', eod: 'End of day' };
   const STATUS = {
-    under: { cls: 'under', label: 'Short-staffed' },
-    ok: { cls: 'ok', label: 'On target' },
-    over: { cls: 'over', label: 'Extra staff' },
+    ok: { cls: 'ok', label: 'Within budget' },
+    over: { cls: 'over', label: 'Over budget' },
   };
   const SEVERITY = {
     high: { rank: 0, label: 'Urgent' },
@@ -618,9 +617,8 @@
   function pitBlock(rows) {
     return `<div class="pit">${ballPit(rows)}</div>
       <p class="pit-legend">
-        <span class="key"><span class="dot ok"></span>On target</span>
-        <span class="key"><span class="dot under"></span>Short-staffed</span>
-        <span class="key"><span class="dot over"></span>Extra staff</span>
+        <span class="key"><span class="dot ok"></span>Within the labor budget</span>
+        <span class="key"><span class="dot over"></span>Over the labor budget</span>
         <span class="key"><span class="ring"></span>Forecast</span>
         <span>Ball size is the guests arriving in that hour.</span>
       </p>`;
@@ -854,9 +852,9 @@
         <th scope="col">Difference</th><th scope="col">Late</th><th scope="col">Cost</th><th scope="col">This week</th><th scope="col" class="text">Status</th></tr></thead>
         <tbody>${body}<tr class="total"><td>Total</td><td></td><td class="text">${fmtHours(total.scheduled)} scheduled</td><td class="text">${fmtHours(total.worked)} worked</td>
         <td></td><td></td><td>${fmtMoney(total.cost)}</td><td></td><td></td></tr></tbody></table></div>`),
-      hours.length ? section('Staffing by hour', 'Staff scheduled, on the clock and recommended for the guests on the floor.', `<div class="table-wrap"><table>
+      hours.length ? section('Staffing by hour', 'Staff scheduled, on the clock, and how many of them the labor budget for that hour pays for (never more than scheduled).', `<div class="table-wrap"><table>
         <thead><tr><th scope="col">Hour</th><th scope="col">On the floor</th><th scope="col">Scheduled</th><th scope="col">On the clock</th>
-        <th scope="col">Recommended</th><th scope="col">Staffing</th></tr></thead><tbody>${hourRows}</tbody></table></div>`) : '',
+        <th scope="col">Budget allows</th><th scope="col">Labor budget</th></tr></thead><tbody>${hourRows}</tbody></table></div>`) : '',
     ].join('');
   }
 
@@ -907,29 +905,22 @@
 
   // ------------------------------------------------------------------ forecasts
 
-  function shortStaffedText(short) {
-    if (!short || !short.length) return '';
-    const ranges = [];
-    for (const slot of short.slice().sort((a, b) => a.hour - b.hour)) {
-      const last = ranges[ranges.length - 1];
-      if (last && slot.hour === last.end + 1) {
-        last.end = slot.hour;
-        last.need = Math.max(last.need, slot.short_by);
-      } else {
-        ranges.push({ start: slot.hour, end: slot.hour, need: slot.short_by });
-      }
-    }
-    const text = ranges
-      .map((r) => `${r.need} more at ${r.start === r.end ? fmtHour(r.start) : `${fmtHour(r.start)} to ${fmtHour(r.end + 1)}`}`)
-      .join('; ');
-    return `<span class="ahead-gap">Needs ${esc(text)}</span>`;
-  }
-
+  /** A day ahead against its labor budget: how many guests one staff member covers, and the cuts that keep labor within it. */
   function laborBudgetText(budget, target) {
-    if (!budget || !(budget.over_by > 0)) return '';
-    const cuts = (budget.changes || []).filter((c) => c.cut > 0).map((c) => `${c.cut} at ${fmtHour(c.hour)}`);
+    if (!budget) return '';
+    const parts = [];
+    if (isNum(budget.guests_per_staff_at_budget)) {
+      const scheduled = isNum(budget.guests_per_staff_scheduled) ? `, 1 per ${fmtInt(budget.guests_per_staff_scheduled)} as scheduled` : '';
+      parts.push(`<span class="ahead-meta">${esc(`Budget pays for 1 staff per ${fmtInt(budget.guests_per_staff_at_budget)} guests${scheduled}`)}</span>`);
+    }
+    const cuts = (budget.cuts || []).map((c) => `${c.cut} at ${fmtHour(c.hour)}`);
     const tail = cuts.length ? `: cut ${cuts.join(', ')} (saves ${fmtMoney(budget.cuts_save)})` : '';
-    return `<span class="ahead-gap">${esc(`Labor ${fmtMoney(budget.over_by)} over the ${fmtPct(target)} budget${tail}`)}</span>`;
+    if (budget.over_by > 0) {
+      parts.push(`<span class="ahead-gap">${esc(`Labor ${fmtMoney(budget.over_by)} over the ${fmtPct(target)} budget${tail}`)}</span>`);
+    } else if (cuts.length) {
+      parts.push(`<span class="ahead-gap">${esc(`Within the ${fmtPct(target)} budget${tail}`)}</span>`);
+    }
+    return parts.join('');
   }
 
   function aheadSection(data) {
@@ -952,7 +943,6 @@
         ${isNum(r.revenue_vs_four_week_pct) ? `<span class="ahead-meta">${esc(fmtSigned(r.revenue_vs_four_week_pct, (v) => `${v.toFixed(0)}%`))} vs the 4-week average</span>` : ''}
         <span class="ahead-meta">Labor ${fmtPct(r.expected_labor_pct)}, ${fmtHours(r.scheduled_hours)} scheduled</span>
         ${r.holiday_note ? `<span class="ahead-holiday">${esc(r.holiday_note)}</span>` : ''}
-        ${shortStaffedText(r.short_staffed)}
         ${laborBudgetText(r.labor_budget, data.targets.labor_pct)}
         <button type="button" class="btn-link" data-goto="forecasts" data-date="${r.date}">Why this forecast</button>
       </li>`).join('');
@@ -1248,8 +1238,8 @@
     );
   }
 
-  /** Days down, hours across; each cell shaded by guests, outlined when fewer staff are scheduled than needed. */
-  function heatGrid(rows, { tone, value, label, cellTitle, need }) {
+  /** Days down, hours across; each cell shaded by guests, outlined when more staff are scheduled than the labor budget pays for. */
+  function heatGrid(rows, { tone, value, label, cellTitle, cut }) {
     const hours = [...new Set(rows.flatMap((r) => r.hours.map((h) => h.hour)))].sort((a, b) => a - b);
     const peak = Math.max(1, ...rows.flatMap((r) => r.hours.map((h) => value(h) || 0)));
     const head = `<div class="heat-corner"></div>${hours.map((h) => `<div class="heat-head">${fmtHour(h)}</div>`).join('')}`;
@@ -1258,9 +1248,9 @@
       const cells = hours.map((hour) => {
         const h = byHour.get(hour);
         if (!h) return '<div class="heat-cell is-closed" aria-hidden="true"></div>';
-        const more = need ? need(h) : 0;
-        return `<div class="heat-cell${more > 0 ? ' is-short' : ''}" data-tint="${((value(h) || 0) / peak).toFixed(3)}" data-tone="${tone}" title="${esc(cellTitle(r, h))}">`
-          + `<span>${fmtInt(value(h))}</span>${more > 0 ? `<span class="heat-need">+${more}</span>` : ''}</div>`;
+        const fewer = cut ? cut(h) : 0;
+        return `<div class="heat-cell${fewer > 0 ? ' is-over' : ''}" data-tint="${((value(h) || 0) / peak).toFixed(3)}" data-tone="${tone}" title="${esc(cellTitle(r, h))}">`
+          + `<span>${fmtInt(value(h))}</span>${fewer > 0 ? `<span class="heat-cut">−${fewer}</span>` : ''}</div>`;
       }).join('');
       return `<div class="heat-label">${label(r)}</div>${cells}`;
     }).join('');
@@ -1273,13 +1263,13 @@
     const grid = heatGrid(rows, {
       tone: 'pink',
       value: (h) => h.on_floor,
-      need: (h) => (h.recommended || 0) - (h.staff_scheduled || 0),
+      cut: (h) => (h.staff_scheduled || 0) - (isNum(h.recommended) ? h.recommended : (h.staff_scheduled || 0)),
       label: (r) => esc(fmtDay(r.date, { weekday: 'short', month: 'short', day: 'numeric' })),
-      cellTitle: (r, h) => `${fmtDayShort(r.date)} ${fmtHour(h.hour)}: about ${fmtInt(h.on_floor)} guests on the floor, ${h.staff_scheduled} staff scheduled, ${h.recommended} recommended`,
+      cellTitle: (r, h) => `${fmtDayShort(r.date)} ${fmtHour(h.hour)}: about ${fmtInt(h.on_floor)} guests on the floor, ${h.staff_scheduled} staff scheduled, ${h.recommended} within the labor budget`,
     });
     return section(
       'Next 7 days, hour by hour',
-      'Expected guests on the floor each hour; darker is busier. An outlined hour has fewer staff scheduled than recommended, and the small number is how many more are needed.',
+      'Expected guests on the floor each hour; darker is busier. An outlined hour has more staff scheduled than its share of the labor budget pays for, and the small number is how many fewer are enough.',
       grid,
     );
   }

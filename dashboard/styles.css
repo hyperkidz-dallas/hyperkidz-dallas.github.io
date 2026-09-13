@@ -552,9 +552,9 @@ tr.total td { font-weight: 700; border-top: 2px solid var(--rule); }
 .heat-head { font-size: 12px; font-weight: 600; color: var(--ink-2); text-align: center; }
 .heat-label { align-self: center; font-size: var(--step--1); font-weight: 600; white-space: nowrap; }
 .heat-cell { position: relative; display: grid; place-items: center; min-height: 40px; border-radius: 8px; background: var(--surface); font-size: 13px; font-weight: 600; }
-.heat-cell.is-short { box-shadow: inset 0 0 0 2px var(--pink-strong); }
+.heat-cell.is-over { box-shadow: inset 0 0 0 2px var(--pink-strong); }
 .heat-cell.is-closed { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
-.heat-need { position: absolute; top: 1px; right: 4px; font-size: 10px; font-weight: 700; color: var(--pink-ink); }
+.heat-cut { position: absolute; top: 1px; right: 4px; font-size: 10px; font-weight: 700; color: var(--pink-ink); }
 
 /* ---------- forecast explanations ---------- */
 
