@@ -35,6 +35,13 @@
   const BIG_MISS_PCT = 25;
   const CALENDAR_DAYS = 7;
   const TINT_RGB = '240, 78, 152';
+  const SKY_RGB = '41, 171, 226';
+  const TIMELINE_PAST_DAYS = 14;
+  const BAR_WIDTH = 46;
+  const CHART_HEIGHT = 222;
+  const CHART_TOP = 32;
+  const CHART_FLOOR = 178;
+  const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const DASH = '–';
   const MINUS = '−';
 
@@ -99,7 +106,7 @@
 
   const encoder = new TextEncoder();
   const $ = (selector, root = document) => root.querySelector(selector);
-  const state = { data: null, focus: null, tab: 'overview', showAllAttention: false };
+  const state = { data: null, focus: null, tab: 'overview', showAllAttention: false, metric: 'net_revenue' };
 
   /** Thrown when the username/password pair cannot unwrap the data key. */
   class LoginError extends Error {}
@@ -406,7 +413,11 @@
       else el.classList.remove('pit-drop');
     });
     root.querySelectorAll('[data-tint]').forEach((el) => {
-      el.style.backgroundColor = `rgba(${TINT_RGB}, ${(0.08 + Number(el.dataset.tint) * 0.42).toFixed(3)})`;
+      const rgb = el.dataset.tone === 'sky' ? SKY_RGB : TINT_RGB;
+      el.style.backgroundColor = `rgba(${rgb}, ${(0.08 + Number(el.dataset.tint) * 0.42).toFixed(3)})`;
+    });
+    root.querySelectorAll('[data-cols]').forEach((el) => {
+      el.style.gridTemplateColumns = `8rem repeat(${el.dataset.cols}, minmax(42px, 1fr))`;
     });
     root.querySelectorAll('[data-height]').forEach((el) => {
       el.style.height = `${Math.max(4, Number(el.dataset.height) * 100).toFixed(1)}%`;
@@ -694,10 +705,15 @@
         ${hours.length ? pitBlock(hours) : '<p class="pit-missing">Hour-by-hour detail is kept for the last 14 days.</p>'}
         ${keyNumbers(data, day)}
       </section>`,
+      whyTeaser(data, day),
       growthBlock(day),
+      figuresSection(data, day),
+      timelineSection(data),
       analysisTeaser(data, date),
       attentionSection(data, date, ATTENTION_PREVIEW),
       aheadSection(data),
+      aheadHeatmap(data),
+      usualWeekSection(data),
     ].join('');
   }
 
@@ -758,6 +774,7 @@
       hours.length ? section('Guests by hour', 'Arrivals each hour against the forecast, and how many were on the floor.', `<div class="table-wrap"><table>
         <thead><tr><th scope="col">Hour</th><th scope="col">Arrived</th><th scope="col">Forecast</th><th scope="col">On the floor</th></tr></thead>
         <tbody>${hourRows}</tbody></table></div>`) : '',
+      usualWeekSection(data),
       weeksSection(data, day.date, 'guests'),
     ].join('');
   }
@@ -928,10 +945,13 @@
         <span class="ahead-bar" aria-hidden="true"><span data-height="${((r.expected_revenue || 0) / peak).toFixed(3)}"></span></span>
         <strong class="ahead-rev">${fmtMoney(r.expected_revenue)}</strong>
         <span class="ahead-meta">${fmtInt(r.expected_guests)} guests</span>
+        ${isNum(r.booked_guests) ? `<span class="ahead-meta">${fmtInt(r.booked_guests)} already booked</span>` : ''}
         ${isNum(r.revenue_change_pct) ? `<span class="ahead-meta">${esc(fmtSigned(r.revenue_change_pct, (v) => `${v.toFixed(0)}%`))} revenue vs last week</span>` : ''}
+        ${isNum(r.revenue_vs_four_week_pct) ? `<span class="ahead-meta">${esc(fmtSigned(r.revenue_vs_four_week_pct, (v) => `${v.toFixed(0)}%`))} vs the 4-week average</span>` : ''}
         <span class="ahead-meta">Labor ${fmtPct(r.expected_labor_pct)}, ${fmtHours(r.scheduled_hours)} scheduled</span>
         ${r.holiday_note ? `<span class="ahead-holiday">${esc(r.holiday_note)}</span>` : ''}
         ${shortStaffedText(r.short_staffed)}
+        <button type="button" class="btn-link" data-goto="forecasts" data-date="${r.date}">Why this forecast</button>
       </li>`).join('');
     return section('Next 7 days', 'Expected from the bookings already made plus the usual walk-ins for each weekday, against the staff scheduled in 7shifts.', `
       <div class="ahead-scroll"><ol class="ahead">${items}</ol></div>
@@ -974,21 +994,28 @@
         const cls = (pct) => (isNum(pct) && Math.abs(pct) >= BIG_MISS_PCT ? ' class="off-big"' : '');
         return `<tr><td>${esc(fmtDayShort(d.date))}</td>
           <td>${fmtInt(f.guests)}</td><td>${fmtInt(d.guests)}</td><td${cls(f.guests_error_pct)}>${missText(f.guests_error_pct)}</td>
-          <td>${fmtMoney(f.revenue)}</td><td>${fmtMoney(d.net_revenue)}</td><td${cls(f.revenue_error_pct)}>${missText(f.revenue_error_pct)}</td></tr>`;
+          <td>${fmtMoney(f.revenue)}</td><td>${fmtMoney(d.net_revenue)}</td><td${cls(f.revenue_error_pct)}>${missText(f.revenue_error_pct)}</td>
+          <td><button type="button" class="btn-link" data-goto="forecasts" data-date="${d.date}">Why</button></td></tr>`;
       }).join('');
     return section('How good the forecasts have been', `${sentence} Each forecast is the last one made before the day began.`, rows ? `<div class="table-wrap"><table>
-        <thead><tr><th scope="col">Day</th><th scope="col">Guests forecast</th><th scope="col">Guests actual</th><th scope="col">Guest forecast was</th><th scope="col">Revenue forecast</th><th scope="col">Revenue actual</th><th scope="col">Revenue forecast was</th></tr></thead>
+        <thead><tr><th scope="col">Day</th><th scope="col">Guests forecast</th><th scope="col">Guests actual</th><th scope="col">Guest forecast was</th><th scope="col">Revenue forecast</th><th scope="col">Revenue actual</th><th scope="col">Revenue forecast was</th><th scope="col"><span class="visually-hidden">Explanation</span></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '');
   }
 
   function forecastsTab(data, day, date) {
-    const lead = day
-      ? `<p class="day-sentence">${esc(daySentence(data, day))}</p>`
-      : '';
+    const ahead = (data.next_days || []).find((d) => d.date === date) || null;
+    let lead = 'Pick a day with a forecast to see why it said what it did.';
+    if (day) lead = daySentence(data, day);
+    else if (ahead) lead = `Expected: ${fmtInt(ahead.expected_guests)} guests and ${fmtMoney(ahead.expected_revenue)} in net revenue.`;
     return [
-      `<section class="day wrap" aria-labelledby="day-title"><h1 class="day-title" id="day-title" tabindex="-1">Forecasts</h1>${lead}</section>`,
+      `<section class="day wrap" aria-labelledby="day-title"><h1 class="day-title" id="day-title" tabindex="-1">Forecasts</h1>
+        <p class="day-sentence">${esc(fmtDayLong(date))}. ${esc(lead)}</p></section>`,
+      whySection(data, date, day, ahead),
+      outcomeSection(data, day),
+      timelineSection(data),
       aheadSection(data),
+      aheadHeatmap(data),
       weekToDateSection(data),
       accuracySection(data),
     ].join('');
@@ -1017,7 +1044,7 @@
     return `<div class="wrap day"><h1 class="day-title" id="day-title" tabindex="-1">Claude's analysis</h1>
       <p class="day-sentence">${esc(fmtDayLong(date))}</p>
       ${statusItems ? `<ul class="status-list" aria-label="Scheduled reports">${statusItems}</ul>` : '<p class="section-lede">No scheduled reports for this day.</p>'}
-      ${cards || '<p class="empty">No analysis was written for this day.</p>'}
+      ${cards || `<p class="empty">No analysis was written for this day. Claude writes one at the 1pm check-in and after the 9:45pm report, from the same numbers as the e-mail; the statuses above say whether those runs happened. Until one is written, the <button type="button" class="btn-link" data-goto="forecasts" data-date="${date}">Forecasts tab</button> explains each forecast from the numbers.</p>`}
     </div>`;
   }
 
@@ -1100,6 +1127,504 @@
     return section('Needs attention', `What the report flagged for ${fmtDayLong(date)}, most urgent first.`, `<ul class="list-plain">${items}</ul>${more}`);
   }
 
+  // ------------------------------------------------------------------ projections: chart and heatmaps
+
+  function barTitle(bar, fmt) {
+    const parts = [fmtDayShort(bar.date)];
+    parts.push(bar.kind === 'projected' ? `expected ${fmt(bar.value)}` : `${fmt(bar.value)}${bar.kind === 'live' ? ' so far' : ''}`);
+    if (isNum(bar.forecast)) parts.push(`forecast ${fmt(bar.forecast)}`);
+    if (isNum(bar.booked)) parts.push(`${fmtInt(bar.booked)} already booked`);
+    return parts.join(', ');
+  }
+
+  /** Two weeks of actual bars with the forecast made before each day, then the next 7 days as expected. */
+  function timelineChart(data, metric) {
+    const guests = metric === 'guests';
+    const past = data.days.slice(-TIMELINE_PAST_DAYS).map((d) => ({
+      date: d.date,
+      kind: d.in_progress ? 'live' : 'actual',
+      value: guests ? d.guests : d.net_revenue,
+      forecast: d.forecast ? (guests ? d.forecast.guests : d.forecast.revenue) : null,
+      booked: null,
+    }));
+    const seen = new Set(past.map((b) => b.date));
+    const ahead = (data.next_days || []).filter((n) => !seen.has(n.date)).map((n) => ({
+      date: n.date,
+      kind: 'projected',
+      value: guests ? n.expected_guests : n.expected_revenue,
+      forecast: null,
+      booked: guests ? n.booked_guests : null,
+    }));
+    const bars = [...past, ...ahead];
+    if (!bars.length) return '';
+    const fmt = guests ? fmtInt : fmtMoneyShort;
+    const peak = Math.max(1, ...bars.map((b) => Math.max(b.value || 0, b.forecast || 0)));
+    const height = (v) => (Math.max(0, v || 0) / peak) * (CHART_FLOOR - CHART_TOP);
+    const width = bars.length * BAR_WIDTH;
+    const label = `${guests ? 'Guests' : 'Net revenue'} for the last ${past.length} days and expected for the next ${ahead.length}`;
+    const parts = [
+      `<svg class="tl-svg" viewBox="0 0 ${width} ${CHART_HEIGHT}" data-min-width="${bars.length * 36}" role="img" aria-label="${esc(label)}">`,
+      `<line class="pit-floor" x1="0" x2="${width}" y1="${CHART_FLOOR}" y2="${CHART_FLOOR}"></line>`,
+    ];
+    if (past.length && ahead.length) {
+      const x = past.length * BAR_WIDTH;
+      parts.push(`<line class="tl-divide" x1="${x}" x2="${x}" y1="4" y2="${CHART_FLOOR}"></line>`);
+      parts.push(`<text class="tl-divide-label" x="${x + 6}" y="14">Expected</text>`);
+    }
+    bars.forEach((b, i) => {
+      const x = i * BAR_WIDTH + 8;
+      const w = BAR_WIDTH - 16;
+      const cx = x + w / 2;
+      const h = height(b.value);
+      const top = CHART_FLOOR - Math.max(h, height(b.forecast));
+      parts.push(`<g><title>${esc(barTitle(b, fmt))}</title>`);
+      parts.push(`<rect class="tl-bar ${b.kind}" x="${x}" y="${(CHART_FLOOR - Math.max(h, 1)).toFixed(1)}" width="${w}" height="${Math.max(h, 1).toFixed(1)}" rx="6"></rect>`);
+      if (isNum(b.booked) && b.booked > 0) {
+        const hb = Math.min(height(b.booked), h);
+        parts.push(`<rect class="tl-booked" x="${x}" y="${(CHART_FLOOR - hb).toFixed(1)}" width="${w}" height="${hb.toFixed(1)}" rx="6"></rect>`);
+      }
+      if (isNum(b.forecast)) {
+        const y = (CHART_FLOOR - height(b.forecast)).toFixed(1);
+        parts.push(`<line class="tl-forecast" x1="${x - 4}" x2="${x + w + 4}" y1="${y}" y2="${y}"></line>`);
+      }
+      if (isNum(b.value)) parts.push(`<text class="tl-value" x="${cx}" y="${(top - 7).toFixed(1)}">${fmt(b.value)}</text>`);
+      parts.push(`<text class="pit-hour" x="${cx}" y="${CHART_FLOOR + 20}">${esc(fmtDay(b.date, { weekday: 'narrow' }))}</text>`);
+      parts.push(`<text class="pit-staff" x="${cx}" y="${CHART_FLOOR + 36}">${Number(b.date.slice(8))}</text></g>`);
+    });
+    parts.push('</svg>');
+    return parts.join('');
+  }
+
+  /** This Monday-to-Sunday week: what happened, what is still expected, against last week. */
+  function weekOutlook(data, metric) {
+    const guests = metric === 'guests';
+    const monday = isoAdd(data.focus_date, -mondayIndex(data.focus_date));
+    const within = (iso, start) => iso >= start && iso <= isoAdd(start, 6);
+    const fmt = guests ? (v) => `${fmtInt(v)} guests` : fmtMoney;
+    const done = data.days.filter((d) => within(d.date, monday));
+    const doneDates = new Set(done.map((d) => d.date));
+    const expected = (data.next_days || []).filter((d) => within(d.date, monday) && !doneDates.has(d.date));
+    const previous = data.days.filter((d) => within(d.date, isoAdd(monday, -7)) && !d.in_progress);
+    const soFar = done.reduce((sum, d) => sum + ((guests ? d.guests : d.net_revenue) || 0), 0);
+    const still = expected.reduce((sum, d) => sum + ((guests ? d.expected_guests : d.expected_revenue) || 0), 0);
+    const before = previous.reduce((sum, d) => sum + ((guests ? d.guests : d.net_revenue) || 0), 0);
+    const range = `${fmtDay(monday, { month: 'short', day: 'numeric' })} to ${fmtDay(isoAdd(monday, 6), { month: 'short', day: 'numeric' })}`;
+    let text = `This week, ${range}: ${fmt(soFar)} so far`;
+    if (expected.length) {
+      text += ` and ${fmt(still)} expected over the ${expected.length} day${expected.length === 1 ? '' : 's'} left, ${fmt(soFar + still)} in all`;
+    }
+    text += '.';
+    if (previous.length && before > 0) {
+      const pct = ((soFar + still - before) / before) * 100;
+      const partial = previous.length < 7 ? ` over its ${previous.length} reported days` : '';
+      text += ` Last week had ${fmt(before)}${partial}, so this week is heading for ${Math.abs(pct).toFixed(0)}% ${pct >= 0 ? 'more' : 'less'}.`;
+    }
+    return text;
+  }
+
+  function timelineSection(data) {
+    const chart = timelineChart(data, state.metric);
+    if (!chart) return '';
+    const toggle = [['net_revenue', 'Revenue'], ['guests', 'Guests']]
+      .map(([key, label]) => `<button type="button" data-metric="${key}" aria-pressed="${state.metric === key}">${label}</button>`)
+      .join('');
+    const legend = `<p class="pit-legend">
+        <span class="key"><span class="swatch actual"></span>Actual</span>
+        <span class="key"><span class="swatch live"></span>Today so far</span>
+        <span class="key"><span class="swatch projected"></span>Expected</span>
+        ${state.metric === 'guests' ? '<span class="key"><span class="swatch booked"></span>Already booked</span>' : ''}
+        <span class="key"><span class="dash"></span>Forecast made before the day</span>
+      </p>`;
+    return section(
+      'Three weeks at a glance',
+      'The last two weeks as they happened, against the forecast made before each day, then the next 7 days as expected now.',
+      `<div class="seg" role="group" aria-label="Measure">${toggle}</div><div class="tl">${chart}</div>${legend}
+       <p class="tl-week">${esc(weekOutlook(data, state.metric))}</p>`,
+    );
+  }
+
+  /** Days down, hours across; each cell shaded by guests, outlined when fewer staff are scheduled than needed. */
+  function heatGrid(rows, { tone, value, label, cellTitle, need }) {
+    const hours = [...new Set(rows.flatMap((r) => r.hours.map((h) => h.hour)))].sort((a, b) => a - b);
+    const peak = Math.max(1, ...rows.flatMap((r) => r.hours.map((h) => value(h) || 0)));
+    const head = `<div class="heat-corner"></div>${hours.map((h) => `<div class="heat-head">${fmtHour(h)}</div>`).join('')}`;
+    const body = rows.map((r) => {
+      const byHour = new Map(r.hours.map((h) => [h.hour, h]));
+      const cells = hours.map((hour) => {
+        const h = byHour.get(hour);
+        if (!h) return '<div class="heat-cell is-closed" aria-hidden="true"></div>';
+        const more = need ? need(h) : 0;
+        return `<div class="heat-cell${more > 0 ? ' is-short' : ''}" data-tint="${((value(h) || 0) / peak).toFixed(3)}" data-tone="${tone}" title="${esc(cellTitle(r, h))}">`
+          + `<span>${fmtInt(value(h))}</span>${more > 0 ? `<span class="heat-need">+${more}</span>` : ''}</div>`;
+      }).join('');
+      return `<div class="heat-label">${label(r)}</div>${cells}`;
+    }).join('');
+    return `<div class="heat-scroll"><div class="heat" data-cols="${hours.length}">${head}${body}</div></div>`;
+  }
+
+  function aheadHeatmap(data) {
+    const rows = (data.next_days || []).filter((d) => (d.hours || []).length);
+    if (!rows.length) return '';
+    const grid = heatGrid(rows, {
+      tone: 'pink',
+      value: (h) => h.on_floor,
+      need: (h) => (h.recommended || 0) - (h.staff_scheduled || 0),
+      label: (r) => esc(fmtDay(r.date, { weekday: 'short', month: 'short', day: 'numeric' })),
+      cellTitle: (r, h) => `${fmtDayShort(r.date)} ${fmtHour(h.hour)}: about ${fmtInt(h.on_floor)} guests on the floor, ${h.staff_scheduled} staff scheduled, ${h.recommended} recommended`,
+    });
+    return section(
+      'Next 7 days, hour by hour',
+      'Expected guests on the floor each hour; darker is busier. An outlined hour has fewer staff scheduled than recommended, and the small number is how many more are needed.',
+      grid,
+    );
+  }
+
+  function usualWeekSection(data) {
+    const usual = data.usual_week;
+    if (!usual || !usual.weekdays || !usual.weekdays.length) return '';
+    const grid = heatGrid(usual.weekdays, {
+      tone: 'sky',
+      value: (h) => h.arrivals,
+      label: (r) => `${WEEKDAY_NAMES[r.weekday]} <span class="muted">${r.days} day${r.days === 1 ? '' : 's'}</span>`,
+      cellTitle: (r, h) => `${WEEKDAY_NAMES[r.weekday]} ${fmtHour(h.hour)}: ${h.arrivals} guests arriving on average, ${h.on_floor} on the floor`,
+    });
+    return section(
+      'A usual week',
+      `Average guests arriving each hour on each weekday, from the ${usual.days} reported days in the last six weeks. Darker is busier.`,
+      grid,
+    );
+  }
+
+  // ------------------------------------------------------------------ forecast explanations
+
+  const MADE_BY = {
+    eod: 'by the end-of-day report',
+    midday: 'by the mid-day check-in',
+    morning: 'by the morning report',
+    reconstructed: 'rebuilt as of midnight from the bookings then on the books',
+  };
+
+  function comparableBasis(date, comparable) {
+    const reported = (comparable.days || []).filter((d) => d.reported).length;
+    if (comparable.rule === 'holiday_weekends') return `${reported} recent weekend day${reported === 1 ? '' : 's'}`;
+    const weekday = fmtDay(date, { weekday: 'long' });
+    return reported === 1 ? `the last ${weekday}` : `the last ${reported} ${weekday}s`;
+  }
+
+  function madeText(why, tz) {
+    if (!why.made_at) return 'When it was made was not recorded.';
+    return `Made ${fmtStamp(why.made_at, tz)}${MADE_BY[why.made_by] ? ` ${MADE_BY[why.made_by]}` : ''}.`;
+  }
+
+  function whyTeaser(data, day) {
+    const why = day && day.forecast && day.forecast.why;
+    if (!why) return '';
+    const comparable = why.comparable || {};
+    let text = `The forecast of ${fmtInt(why.guests)} guests was made ${why.made_at ? fmtStamp(why.made_at, data.timezone) : 'before the day began'} from ${comparableBasis(day.date, comparable)}`;
+    if (isNum(comparable.avg_guests)) text += ` (${fmtInt(comparable.avg_guests)} guests on average)`;
+    if (isNum(why.booked_guests)) text += ` and the ${fmtInt(why.booked_guests)} guests already booked`;
+    text += '.';
+    const outcome = day.forecast.outcome;
+    if (outcome && outcome.hours && outcome.hours.length) {
+      const h = outcome.hours[0];
+      text += ` The biggest difference was ${fmtHour(Number(h.name))}: ${fmtInt(h.actual)} arrived against ${fmtInt(h.expected)} expected.`;
+    }
+    return `<div class="wrap why-teaser"><p>${esc(text)} <button type="button" class="btn-link" data-goto="forecasts" data-date="${day.date}">See why</button></p></div>`;
+  }
+
+  /** The comparable days' guests as bars, their average as a line, then the forecast with its booked share. */
+  function comparableChart(why) {
+    const days = (why.comparable.days || []).slice().reverse();
+    const cols = [
+      ...days.map((d) => ({ label: fmtDay(d.date, { month: 'short', day: 'numeric' }), value: d.reported ? d.guests : null, kind: 'past' })),
+      { label: 'Forecast', value: why.guests, kind: 'forecast' },
+    ];
+    const width = 420;
+    const height = 200;
+    const top = 24;
+    const floor = 164;
+    const avg = why.comparable.avg_guests;
+    const max = Math.max(1, avg || 0, ...cols.map((c) => c.value || 0)) * 1.12;
+    const y = (v) => floor - (Math.max(0, v) / max) * (floor - top);
+    const step = width / cols.length;
+    const barW = step * 0.56;
+    const parts = [`<svg class="cmp-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Guests on the comparable days and the forecast of ${fmtInt(why.guests)}`)}">`,
+      `<line class="pit-floor" x1="0" x2="${width}" y1="${floor}" y2="${floor}"></line>`];
+    cols.forEach((c, i) => {
+      const x = step * i + (step - barW) / 2;
+      const cx = step * i + step / 2;
+      if (isNum(c.value)) {
+        parts.push(`<rect class="cmp-bar ${c.kind}" x="${x.toFixed(1)}" y="${y(c.value).toFixed(1)}" width="${barW.toFixed(1)}" height="${(floor - y(c.value)).toFixed(1)}" rx="6"></rect>`);
+        if (c.kind === 'forecast' && isNum(why.booked_guests) && why.booked_guests > 0) {
+          const booked = Math.min(why.booked_guests, c.value);
+          parts.push(`<rect class="cmp-booked" x="${x.toFixed(1)}" y="${y(booked).toFixed(1)}" width="${barW.toFixed(1)}" height="${(floor - y(booked)).toFixed(1)}" rx="6"></rect>`);
+        }
+        parts.push(`<text class="tl-value" x="${cx.toFixed(1)}" y="${(y(c.value) - 6).toFixed(1)}">${fmtInt(c.value)}</text>`);
+      } else {
+        parts.push(`<text class="pit-staff" x="${cx.toFixed(1)}" y="${floor - 8}">not reported</text>`);
+      }
+      parts.push(`<text class="pit-hour" x="${cx.toFixed(1)}" y="${floor + 20}">${esc(c.label)}</text>`);
+    });
+    if (isNum(avg)) {
+      const ay = y(avg).toFixed(1);
+      parts.push(`<line class="cmp-avg" x1="0" x2="${(step * days.length).toFixed(1)}" y1="${ay}" y2="${ay}"></line>`);
+      parts.push(`<text class="cmp-avg-label" x="4" y="${(Number(ay) - 6).toFixed(1)}">Average ${fmtInt(avg)}</text>`);
+    }
+    parts.push('</svg>');
+    return parts.join('');
+  }
+
+  function whySection(data, date, day, ahead) {
+    const why = (day && day.forecast && day.forecast.why) || (ahead && ahead.why) || null;
+    if (!why) {
+      if (day && !day.forecast) {
+        return section('Why the forecast said what it did', '', '<p class="muted">No forecast was saved before this day began, so there is nothing to explain for it.</p>');
+      }
+      return '';
+    }
+    const comparable = why.comparable || { days: [] };
+    const title = day
+      ? `Why the forecast said ${fmtInt(why.guests)} guests and ${fmtMoney(why.revenue)}`
+      : `Why ${fmtDayLong(date)} is expected to bring ${fmtInt(why.guests)} guests`;
+    const ruleText = comparable.rule === 'holiday_weekends'
+      ? 'It is a weekday holiday, so the forecast learned from recent weekend days, when traffic behaves the same way.'
+      : `It learned from ${comparableBasis(date, comparable)}, skipping holidays.`;
+    const rows = (comparable.days || []).map((d) => `<tr><td>${esc(fmtDayShort(d.date))}</td>
+      <td>${d.reported ? fmtInt(d.guests) : '<span class="muted">not reported</span>'}</td>
+      <td>${d.reported ? fmtMoney(d.net_revenue) : DASH}</td><td>${d.reported ? fmtInt(d.walk_ins) : DASH}</td></tr>`).join('');
+    const bookings = `${fmtInt(why.advance_bookings)} booking${why.advance_bookings === 1 ? '' : 's'}`;
+    const guestsStep = isNum(why.booked_guests)
+      ? `${fmtInt(why.booked_guests)} guests were already booked (${bookings}), and about ${fmtInt(why.walk_in_guests)} more were expected to walk in, hour by hour, as on the comparable days.`
+      : `Guests are what was booked (${bookings}) plus the usual walk-ins for each hour on the comparable days.`;
+    const factor = isNum(why.revenue_factor) ? why.revenue_factor.toFixed(2) : DASH;
+    const revenueStep = {
+      scaled: `Revenue of ${fmtMoney(why.revenue)} is the comparable days' average of ${fmtMoney(comparable.avg_revenue)}, scaled by expected guests against their average (x${factor}).`,
+      bookings: `Bookings already came to more than a normal day, so revenue of ${fmtMoney(why.revenue)} is the booked value.`,
+      no_history: `No comparable days were reported yet, so revenue of ${fmtMoney(why.revenue)} is only what was booked.`,
+    }[why.revenue_rule] || '';
+    const peaks = (why.peak_hours || []).map((p) => `${fmtHour(p.hour)} (${fmtInt(p.arrivals)})`).join(', ');
+    const equation = isNum(why.booked_guests)
+      ? `<span class="term"><strong>${fmtInt(why.booked_guests)}</strong> already booked</span><span class="op" aria-hidden="true">+</span>
+         <span class="term"><strong>${fmtInt(why.walk_in_guests)}</strong> expected walk-ins</span><span class="op" aria-hidden="true">=</span>`
+      : '';
+    const body = `
+      <p class="section-lede">${esc(madeText(why, data.timezone))} ${esc(ruleText)}</p>
+      <div class="equation">${equation}<span class="term"><strong>${fmtInt(why.guests)}</strong> guests</span>
+        <span class="term"><strong>${fmtMoney(why.revenue)}</strong> net revenue</span></div>
+      <div class="why-grid">
+        <div>
+          <h3 class="fig-title">What it learned from</h3>
+          ${comparableChart(why)}
+          <div class="table-wrap"><table class="compact"><thead><tr><th scope="col">Day</th><th scope="col">Guests</th><th scope="col">Net revenue</th><th scope="col">Walk-ins</th></tr></thead>
+            <tbody>${rows}<tr class="total"><td>Average</td><td>${fmtInt(comparable.avg_guests)}</td><td>${fmtMoney(comparable.avg_revenue)}</td><td></td></tr></tbody></table></div>
+        </div>
+        <div>
+          <h3 class="fig-title">How it got there</h3>
+          <ol class="list-steps">
+            <li>${esc(guestsStep)}</li>
+            <li>${esc(revenueStep)}</li>
+            ${peaks ? `<li>${esc(`Busiest hours expected, guests arriving: ${peaks}.`)}</li>` : ''}
+            <li>${esc(`Labor at ${fmtPct(why.labor_pct)} of revenue with ${fmtHours(why.scheduled_hours)} scheduled in 7shifts.`)}</li>
+          </ol>
+        </div>
+      </div>`;
+    return section(title, '', body);
+  }
+
+  function reasonRows(rows, label, describe) {
+    if (!rows || !rows.length) return '';
+    const peak = Math.max(1, ...rows.map((r) => Math.abs(r.change)));
+    return rows.map((r) => `<li><span class="reason-name">${esc(label(r.name))}</span>
+        <span class="reason-bar" aria-hidden="true"><span class="${r.change > 0 ? 'up' : 'down'}" data-width="${((Math.abs(r.change) / peak) * 0.5).toFixed(4)}"></span></span>
+        <span class="reason-text">${esc(describe(r))}</span></li>`).join('');
+  }
+
+  function outcomeSection(data, day) {
+    const outcome = day && day.forecast && day.forecast.outcome;
+    if (!outcome) return '';
+    const g = outcome.guests;
+    const rev = outcome.revenue;
+    const direction = g.change > 0 ? 'busier than' : g.change < 0 ? 'quieter than' : 'the same as';
+    const weekday = fmtDay(day.date, { weekday: 'long' });
+    const pct = isNum(g.change_pct) ? `, ${fmtSigned(g.change_pct, (v) => `${v.toFixed(0)}%`)}` : '';
+    const lede = `${fmtInt(g.actual)} guests came against ${fmtInt(g.expected)} expected (${fmtSigned(g.change, fmtInt)}${pct}), and net revenue was ${fmtMoney(rev.actual)} against ${fmtMoney(rev.expected)} (${fmtSigned(rev.change, fmtMoney)}).`;
+    const blocks = [
+      ['Arrivals by hour', reasonRows(outcome.hours, (n) => fmtHour(Number(n)),
+        (r) => `${fmtInt(r.actual)} arrived, ${fmtInt(r.expected)} expected (${fmtSigned(r.change, fmtInt)})`)],
+      ['Revenue by category', reasonRows(outcome.revenue_categories, categoryLabel,
+        (r) => `${fmtMoney(r.actual)} against ${fmtMoney(r.expected)} forecast (${fmtSigned(r.change, fmtMoney)})`)],
+      [`Who came, against a usual ${weekday}`, reasonRows(outcome.guest_groups, groupLabel,
+        (r) => `${fmtInt(r.actual)} against ${fmtInt(r.expected)} usually (${fmtSigned(r.change, fmtInt)})`)],
+    ].filter(([, html]) => html)
+      .map(([heading, html]) => `<div><h3 class="fig-title">${esc(heading)}</h3><ul class="reason-list">${html}</ul></div>`)
+      .join('');
+    const booked = outcome.advance_bookings || {};
+    const walk = outcome.walk_ins || {};
+    const extra = `Advance bookings: ${fmtInt(booked.when_forecast)} on the books when the forecast was made, ${fmtInt(booked.on_the_day)} by the day. Walk-ins: ${fmtInt(walk.on_the_day)}${isNum(walk.usual) ? ` against a usual ${fmtInt(walk.usual)}` : ''}.`;
+    return section(`What made ${fmtDayLong(day.date)} ${direction} forecast`, lede,
+      `<div class="why-grid">${blocks}</div><p class="section-lede outcome-extra">${esc(extra)}</p>`, 'band-lilac');
+  }
+
+  // ------------------------------------------------------------------ trend figures
+
+  const FIG = { w: 520, h: 230, left: 48, right: 14, top: 18, bottom: 38 };
+  const CATEGORY_ORDER = ['admission', 'party', 'food', 'retail', 'membership', 'other'];
+
+  function niceMax(value) {
+    if (!(value > 0)) return 1;
+    const power = 10 ** Math.floor(Math.log10(value));
+    return Math.ceil((value * 1.08) / power) * power;
+  }
+
+  function frame(max, fmt, labels, every) {
+    const step = (FIG.w - FIG.left - FIG.right) / labels.length;
+    const y = (v) => FIG.top + (1 - Math.max(0, Math.min(v, max)) / max) * (FIG.h - FIG.top - FIG.bottom);
+    const x = (i) => FIG.left + step * (i + 0.5);
+    const grid = [0, 0.5, 1].map((f) => `<line class="ax-grid" x1="${FIG.left}" x2="${FIG.w - FIG.right}" y1="${y(max * f).toFixed(1)}" y2="${y(max * f).toFixed(1)}"></line>`
+      + `<text class="ax-label y" x="${FIG.left - 6}" y="${(y(max * f) + 4).toFixed(1)}">${esc(fmt(max * f))}</text>`).join('');
+    const ticks = labels.map((label, i) => (i % every === 0 || i === labels.length - 1
+      ? `<text class="ax-label x" x="${x(i).toFixed(1)}" y="${FIG.h - FIG.bottom + 18}">${esc(label)}</text>` : '')).join('');
+    return { x, y, step, svg: grid + ticks };
+  }
+
+  const svgOpen = (label) => `<svg class="fig-svg" viewBox="0 0 ${FIG.w} ${FIG.h}" role="img" aria-label="${esc(label)}">`;
+  const shortDate = (iso) => fmtDay(iso, { month: 'numeric', day: 'numeric' });
+  const legendKey = (shape, cls, label) => `<span class="key"><span class="${shape} ${cls}"></span>${esc(label)}</span>`;
+
+  function pathOf(points) {
+    let d = '';
+    let pen = false;
+    for (const p of points) {
+      if (!p) {
+        pen = false;
+        continue;
+      }
+      d += `${pen ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)} `;
+      pen = true;
+    }
+    return d.trim();
+  }
+
+  function figure(title, lede, svg, legend) {
+    return `<figure class="fig"><h3 class="fig-title">${esc(title)}</h3>${lede ? `<p class="fig-lede">${esc(lede)}</p>` : ''}${svg}
+      ${legend ? `<p class="pit-legend">${legend}</p>` : ''}</figure>`;
+  }
+
+  function paceFigure(data, day) {
+    const rows = data.hourly[day.date] || [];
+    if (!rows.some((r) => isNum(r.forecast_arrivals)) || !rows.some((r) => isNum(r.arrivals))) return '';
+    let arrived = 0;
+    let expected = 0;
+    const actual = rows.map((r) => (!r.expected && isNum(r.arrivals) ? (arrived += r.arrivals) : null));
+    const forecast = rows.map((r) => (isNum(r.forecast_arrivals) ? (expected += r.forecast_arrivals) : null));
+    const max = niceMax(Math.max(arrived, expected));
+    const fr = frame(max, fmtInt, rows.map((r) => fmtHour(r.hour)), rows.length > 8 ? 2 : 1);
+    const points = (values) => values.map((v, i) => (isNum(v) ? { x: fr.x(i), y: fr.y(v) } : null));
+    const svg = `${svgOpen(`Running total of guests arriving on ${fmtDayLong(day.date)} against the forecast`)}${fr.svg}
+      <path class="ln forecast" d="${pathOf(points(forecast))}"></path><path class="ln actual" d="${pathOf(points(actual))}"></path></svg>`;
+    return figure('Guests through the day', `${fmtInt(arrived)} arrived ${day.in_progress && !day.after_close ? 'so far ' : ''}against ${fmtInt(expected)} in the forecast for the whole day.`, svg,
+      legendKey('dash-key', 'actual', 'Arrived') + legendKey('dash-key', 'forecast', 'Forecast'));
+  }
+
+  function missFigure(data) {
+    const days = data.days.filter((d) => d.forecast && !d.in_progress && isNum(d.forecast.guests) && d.forecast.guests > 0).slice(-TIMELINE_PAST_DAYS);
+    if (days.length < 2) return '';
+    const values = days.map((d) => ((d.guests - d.forecast.guests) / d.forecast.guests) * 100);
+    const limit = niceMax(Math.min(200, Math.max(10, ...values.map((v) => Math.abs(v)))));
+    const mid = (FIG.top + FIG.h - FIG.bottom) / 2;
+    const y = (v) => mid - (Math.max(-limit, Math.min(limit, v)) / limit) * (mid - FIG.top);
+    const step = (FIG.w - FIG.left - FIG.right) / days.length;
+    const barW = step * 0.6;
+    const grid = [limit, 0, -limit].map((v) => `<line class="${v === 0 ? 'zero' : 'ax-grid'}" x1="${FIG.left}" x2="${FIG.w - FIG.right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"></line>`
+      + `<text class="ax-label y" x="${FIG.left - 6}" y="${(y(v) + 4).toFixed(1)}">${v > 0 ? '+' : v < 0 ? MINUS : ''}${Math.abs(v)}%</text>`).join('');
+    const bars = days.map((d, i) => {
+      const v = values[i];
+      const top = Math.min(y(v), mid);
+      const x = FIG.left + step * i + (step - barW) / 2;
+      const label = `${fmtDayShort(d.date)}: ${fmtInt(d.guests)} guests against ${fmtInt(d.forecast.guests)} forecast (${fmtSigned(v, (n) => `${n.toFixed(0)}%`)})`;
+      const tick = i % 2 === 0 || i === days.length - 1 ? `<text class="ax-label x" x="${(x + barW / 2).toFixed(1)}" y="${FIG.h - FIG.bottom + 18}">${esc(shortDate(d.date))}</text>` : '';
+      return `<rect class="${v >= 0 ? 'bar-up' : 'bar-down'}" x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, Math.abs(y(v) - mid)).toFixed(1)}" rx="3"><title>${esc(label)}</title></rect>${tick}`;
+    }).join('');
+    const busier = values.filter((v) => v > 0).length;
+    return figure('Busier or quieter than forecast', `Guests against the forecast made before each day: ${busier} of ${days.length} days came in busier.`,
+      `${svgOpen('Each day\'s guests against its forecast, in percent')}${grid}${bars}</svg>`,
+      legendKey('dot', 'bar-up-key', 'Busier than forecast') + legendKey('dot', 'bar-down-key', 'Quieter than forecast'));
+  }
+
+  function stackedFigure(title, lede, columns, keys, fmt, label) {
+    const totals = columns.map((c) => keys.reduce((sum, k) => sum + (c.parts[k.key] || 0), 0));
+    if (!totals.some((t) => t > 0)) return '';
+    const fr = frame(niceMax(Math.max(...totals)), fmt, columns.map((c) => shortDate(c.date)), 2);
+    const barW = Math.max(4, fr.step * 0.62);
+    const bars = columns.map((c, i) => {
+      let base = 0;
+      return keys.map((k) => {
+        const v = c.parts[k.key] || 0;
+        if (v <= 0) return '';
+        const top = fr.y(base + v);
+        const bottom = fr.y(base);
+        base += v;
+        return `<rect class="${k.fill}" x="${(fr.x(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0.5, bottom - top).toFixed(1)}"><title>${esc(`${fmtDayShort(c.date)}, ${k.label}: ${fmt(v)}`)}</title></rect>`;
+      }).join('');
+    }).join('');
+    const shown = keys.filter((k) => columns.some((c) => (c.parts[k.key] || 0) > 0));
+    return figure(title, lede, `${svgOpen(label)}${fr.svg}${bars}</svg>`, shown.map((k) => legendKey('dot', k.dot, k.label)).join(''));
+  }
+
+  function guestMixFigure(data) {
+    const days = data.days.slice(-TIMELINE_PAST_DAYS);
+    return stackedFigure('Who came, day by day', 'People by pass type over the last two weeks.',
+      days.map((d) => ({ date: d.date, parts: d.guests_by_group || {} })),
+      GUEST_GROUPS.map((g) => ({ key: g.key, label: g.label, fill: `fill-${g.key}`, dot: g.cls })), fmtInt,
+      'People by pass type for each of the last two weeks');
+  }
+
+  function revenueMixFigure(data) {
+    const days = data.days.slice(-TIMELINE_PAST_DAYS).map((d) => {
+      const parts = {};
+      for (const [name, value] of Object.entries(d.revenue_by_category || {})) {
+        const key = CATEGORY_ORDER.includes(name) ? name : 'other';
+        parts[key] = (parts[key] || 0) + (value || 0);
+      }
+      return { date: d.date, parts };
+    });
+    return stackedFigure('Where the money came from', 'Net revenue by category over the last two weeks.', days,
+      CATEGORY_ORDER.map((k) => ({ key: k, label: categoryLabel(k), fill: `fill-cat-${k}`, dot: `cat-${k}` })), fmtMoneyShort,
+      'Net revenue by category for each of the last two weeks');
+  }
+
+  function laborFigure(data) {
+    const past = data.days.filter((d) => !d.in_progress).slice(-TIMELINE_PAST_DAYS);
+    const ahead = data.next_days || [];
+    const cols = [...past.map((d) => ({ date: d.date, actual: d.labor_pct, expected: null })),
+      ...ahead.map((d) => ({ date: d.date, actual: null, expected: d.expected_labor_pct }))];
+    const values = cols.flatMap((c) => [c.actual, c.expected]).filter(isNum);
+    if (values.length < 2) return '';
+    const target = data.targets.labor_pct;
+    const max = niceMax(Math.min(120, Math.max(target, ...values)));
+    const fr = frame(max, (v) => `${Math.round(v)}%`, cols.map((c) => shortDate(c.date)), 3);
+    const actual = cols.map((c, i) => (isNum(c.actual) ? { x: fr.x(i), y: fr.y(c.actual) } : null));
+    const joinAt = past.length - 1;
+    const expected = cols.map((c, i) => {
+      if (isNum(c.expected)) return { x: fr.x(i), y: fr.y(c.expected) };
+      return i === joinAt && isNum(c.actual) ? { x: fr.x(i), y: fr.y(c.actual) } : null;
+    });
+    const ty = fr.y(target).toFixed(1);
+    const svg = `${svgOpen('Labor as a percentage of net revenue for each day, with the target')}${fr.svg}
+      <line class="ln target" x1="${FIG.left}" x2="${FIG.w - FIG.right}" y1="${ty}" y2="${ty}"></line>
+      <path class="ln expected" d="${pathOf(expected)}"></path><path class="ln actual" d="${pathOf(actual)}"></path></svg>`;
+    const over = past.filter((d) => isNum(d.labor_pct) && d.labor_pct > target).length;
+    return figure('Labor as a share of revenue', `Target ${fmtPct(target)}; ${over} of the last ${past.length} days were above it. The dotted line is the next 7 days with the staff scheduled now.`, svg,
+      legendKey('dash-key', 'actual', 'Actual') + legendKey('dash-key', 'expected', 'Expected') + legendKey('dash-key', 'target', 'Target'));
+  }
+
+  function figuresSection(data, day) {
+    const figures = [day ? paceFigure(data, day) : '', missFigure(data), guestMixFigure(data), revenueMixFigure(data), laborFigure(data)]
+      .filter(Boolean);
+    if (!figures.length) return '';
+    return section('Trends', 'How the day built up, how close the forecasts came, and what the last two weeks were made of.', `<div class="figs">${figures.join('')}</div>`);
+  }
+
   const TAB_RENDERERS = {
     overview: overviewTab,
     guests: guestsTab,
@@ -1133,12 +1658,18 @@
   }
 
   function onAppClick(event) {
-    const el = event.target.closest('[data-tab], [data-focus], [data-shift], [data-action]');
+    const el = event.target.closest('[data-goto], [data-tab], [data-focus], [data-shift], [data-metric], [data-action]');
     if (!el || el.disabled) return;
-    if (el.dataset.tab) setTab(el.dataset.tab);
+    if (el.dataset.goto) {
+      state.tab = el.dataset.goto;
+      setFocus(el.dataset.date || state.focus, true);
+    } else if (el.dataset.tab) setTab(el.dataset.tab);
     else if (el.dataset.focus) setFocus(el.dataset.focus, true);
     else if (el.dataset.shift) setFocus(isoAdd(state.focus, Number(el.dataset.shift)), false);
-    else if (el.dataset.action === 'sign-out') signOut();
+    else if (el.dataset.metric) {
+      state.metric = el.dataset.metric;
+      render(false);
+    } else if (el.dataset.action === 'sign-out') signOut();
     else if (el.dataset.action === 'latest') setFocus(state.data.focus_date, false);
     else if (el.dataset.action === 'show-all-attention') {
       state.showAllAttention = true;

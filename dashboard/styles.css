@@ -105,16 +105,6 @@ a { color: var(--sky-ink); }
 
 .login-logo { display: block; width: 100%; margin-bottom: 22px; }
 
-.login-title {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: var(--step-3);
-  line-height: 1.05;
-  margin: 0 0 8px;
-}
-
-.login-lede { color: var(--ink-2); margin: 0 0 20px; max-width: 36ch; }
-
 #login-form label:not(.remember) {
   display: block;
   font-weight: 600;
@@ -395,7 +385,8 @@ a { color: var(--sky-ink); }
 .cell-holiday { font-size: 11px; font-weight: 700; color: var(--lilac-ink); line-height: 1.2; }
 
 /* tables */
-.table-wrap { overflow-x: auto; }
+/* position: relative keeps absolutely positioned screen-reader labels inside the scroll area on phones. */
+.table-wrap { position: relative; overflow-x: auto; }
 table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: var(--step--1); }
 th {
   padding: 8px 10px;
@@ -467,24 +458,31 @@ td.notes { min-width: 24rem; white-space: normal; text-align: left; color: var(-
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .controls { position: sticky; top: 0; z-index: 5; background: var(--ground); border-block: 2px solid var(--rule); }
-.controls-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding-block: 10px; }
-.tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* Tabs and the day picker share one row on wide screens; below 1100px the picker wraps to its own row. */
+.controls-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px 16px; padding-block: 10px; }
+.tabs { display: flex; flex: 1 1 auto; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
   flex: none;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--ink-2);
+  font-size: 0.9375rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 .tab:hover { background: var(--lilac); color: var(--ink); }
 .tab[aria-selected="true"] { background: var(--ink); color: #fff; }
-.picker { display: flex; align-items: center; gap: 8px; }
-.picker input[type="date"] { padding: 7px 10px; border: 2px solid var(--rule); border-radius: 12px; background: var(--surface); font-weight: 600; }
+.picker { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; }
+.picker .nav-btn { width: 34px; height: 34px; font-size: 1.1rem; }
+.picker .btn-quiet { padding: 5px 12px; }
+.picker input[type="date"] { padding: 5px 8px; border: 2px solid var(--rule); border-radius: 12px; background: var(--surface); font-weight: 600; }
+@media (max-width: 1100px) {
+  .controls-row { flex-wrap: wrap; }
+}
 .btn-update {
   display: inline-flex;
   align-items: center;
@@ -536,6 +534,108 @@ tr.total td { font-weight: 700; border-top: 2px solid var(--rule); }
 .analysis-card { padding-block: 18px; border-top: 2px solid var(--rule); }
 .analysis-card h3 { margin: 0 0 4px; font-family: var(--font-display); font-weight: 400; font-size: var(--step-1); }
 .analysis-card .read-summary { margin-top: 12px; }
+
+/* ---------- projections: three weeks, heatmaps ---------- */
+
+.seg { display: inline-flex; gap: 4px; margin: 0 0 14px; padding: 3px; border-radius: 999px; background: var(--lilac); }
+.seg button { padding: 5px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--lilac-ink); font-weight: 600; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.tl { overflow-x: auto; }
+.tl-svg { display: block; width: 100%; height: auto; }
+.tl-bar.actual { fill: var(--pink-strong); }
+.tl-bar.live { fill: var(--pink); stroke: var(--pink-strong); stroke-width: 2; stroke-dasharray: 5 4; }
+.tl-bar.projected { fill: var(--lilac); stroke: var(--lilac-strong); stroke-width: 2; }
+.tl-booked { fill: var(--lilac-strong); opacity: 0.55; }
+.tl-forecast { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+.tl-value { font-size: 12px; font-weight: 700; fill: var(--ink); text-anchor: middle; }
+.tl-divide { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 3 5; }
+.tl-divide-label { font-size: 12px; font-weight: 600; fill: var(--ink-2); }
+.tl-week { max-width: 80ch; margin: 14px 0 0; font-weight: 600; }
+.swatch { width: 14px; height: 10px; border-radius: 3px; }
+.swatch.actual { background: var(--pink-strong); }
+.swatch.live { background: var(--pink); box-shadow: inset 0 0 0 2px var(--pink-strong); }
+.swatch.projected { background: var(--lilac); box-shadow: inset 0 0 0 2px var(--lilac-strong); }
+.swatch.booked { background: var(--lilac-strong); opacity: 0.55; }
+.dash { width: 16px; height: 3px; border-radius: 2px; background: var(--ink); }
+
+.heat-scroll { overflow-x: auto; padding-bottom: 4px; }
+.heat { display: grid; gap: 4px; min-width: 620px; }
+.heat-head { font-size: 12px; font-weight: 600; color: var(--ink-2); text-align: center; }
+.heat-label { align-self: center; font-size: var(--step--1); font-weight: 600; white-space: nowrap; }
+.heat-cell { position: relative; display: grid; place-items: center; min-height: 40px; border-radius: 8px; background: var(--surface); font-size: 13px; font-weight: 600; }
+.heat-cell.is-short { box-shadow: inset 0 0 0 2px var(--pink-strong); }
+.heat-cell.is-closed { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+.heat-need { position: absolute; top: 1px; right: 4px; font-size: 10px; font-weight: 700; color: var(--pink-ink); }
+
+/* ---------- forecast explanations ---------- */
+
+.why-teaser p { max-width: 80ch; margin: 0 0 24px; padding: 12px 16px; border-left: 4px solid var(--lilac-strong); background: var(--lilac); border-radius: 0 12px 12px 0; }
+.btn-link { padding: 0; border: 0; background: none; color: var(--sky-ink); font-weight: 700; text-decoration: underline; cursor: pointer; }
+.ahead-day .btn-link { align-self: flex-start; margin-top: 8px; font-size: var(--step--1); }
+.equation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 4px 0 22px; }
+.equation .term { padding: 8px 14px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 2px var(--rule); color: var(--ink-2); font-weight: 600; }
+.equation .term strong { font-family: var(--font-display); font-weight: 400; font-size: var(--step-2); color: var(--ink); }
+.equation .op { font-family: var(--font-display); font-size: var(--step-2); color: var(--ink-3); }
+.why-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 20px 44px; }
+.fig-title { margin: 0 0 6px; font-family: var(--font-display); font-weight: 400; font-size: var(--step-1); }
+.cmp-svg { display: block; width: 100%; max-width: 460px; height: auto; margin-bottom: 10px; }
+.cmp-bar.past { fill: var(--sky-strong); }
+.cmp-bar.forecast { fill: var(--lilac); stroke: var(--lilac-strong); stroke-width: 2; }
+.cmp-booked { fill: var(--lilac-strong); opacity: 0.6; }
+.cmp-avg { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 6 4; }
+.cmp-avg-label { font-size: 12px; font-weight: 700; fill: var(--ink); }
+table.compact { min-width: 0; }
+.list-steps { margin: 0; padding-left: 1.3em; max-width: 60ch; }
+.list-steps li { margin-bottom: 10px; }
+.reason-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.reason-list li { display: grid; grid-template-columns: minmax(6.5rem, 1fr) 2fr; align-items: center; gap: 2px 12px; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: var(--step--1); }
+.reason-name { font-weight: 600; }
+.reason-bar { position: relative; height: 10px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.reason-bar span { position: absolute; top: 0; bottom: 0; }
+.reason-bar .up { left: 50%; background: var(--lime-strong); }
+.reason-bar .down { right: 50%; background: var(--pink-strong); }
+.reason-text { grid-column: 1 / -1; color: var(--ink-2); }
+.outcome-extra { margin-top: 8px; }
+
+/* Grid children default to min-width: auto, so a wide table inside one would push the page past a phone's edge. */
+.why-grid > *, .figs > * { min-width: 0; }
+
+/* ---------- trend figures ---------- */
+
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px 44px; }
+.fig { margin: 0; padding-top: 16px; border-top: 2px solid var(--rule); }
+.fig-lede { max-width: 60ch; margin: 0 0 8px; font-size: var(--step--1); color: var(--ink-2); }
+.fig-svg { display: block; width: 100%; height: auto; }
+.ax-grid { stroke: var(--rule); stroke-width: 1; }
+.zero { stroke: var(--ink-3); stroke-width: 1.5; }
+.ax-label { font-size: 11px; fill: var(--ink-3); }
+.ax-label.y { text-anchor: end; }
+.ax-label.x { text-anchor: middle; }
+.ln { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ln.actual { stroke: var(--pink-strong); }
+.ln.forecast { stroke: var(--lilac-strong); stroke-dasharray: 7 6; }
+.ln.expected { stroke: var(--lilac-strong); stroke-dasharray: 1 6; }
+.ln.target { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.dash-key { width: 20px; height: 0; border-top: 3px solid var(--pink-strong); }
+.dash-key.forecast { border-top: 3px dashed var(--lilac-strong); }
+.dash-key.expected { border-top: 3px dotted var(--lilac-strong); }
+.dash-key.target { border-top: 2px dashed var(--ink-3); }
+.bar-up { fill: var(--lime-strong); }
+.bar-down { fill: var(--pink-strong); }
+.dot.bar-up-key { background: var(--lime-strong); }
+.dot.bar-down-key { background: var(--pink-strong); }
+.fill-children { fill: var(--pink-strong); }
+.fill-toddlers { fill: var(--sky-strong); }
+.fill-infants { fill: var(--lemon-strong); }
+.fill-other_passes { fill: var(--lilac-strong); }
+.fill-party_guests { fill: var(--lime-strong); }
+.fill-adults { fill: var(--adult-tone); }
+.fill-cat-admission, .cat-admission { fill: var(--pink-strong); background: var(--pink-strong); }
+.fill-cat-party, .cat-party { fill: var(--lilac-strong); background: var(--lilac-strong); }
+.fill-cat-food, .cat-food { fill: var(--lemon-strong); background: var(--lemon-strong); }
+.fill-cat-retail, .cat-retail { fill: var(--sky-strong); background: var(--sky-strong); }
+.fill-cat-membership, .cat-membership { fill: var(--lime-strong); background: var(--lime-strong); }
+.fill-cat-other, .cat-other { fill: var(--adult-tone); background: var(--adult-tone); }
 
 /* ---------- narrow screens ---------- */
 
