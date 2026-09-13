@@ -52,7 +52,7 @@
     { id: 'staff', label: 'Staff' },
     { id: 'calendar', label: 'Calendar' },
     { id: 'forecasts', label: 'Forecasts' },
-    { id: 'analysis', label: "Claude's analysis" },
+    { id: 'analysis', label: 'AI analysis' },
     { id: 'updates', label: 'Updates' },
   ];
   const MODE_NAMES = { morning: 'Morning report', midday: 'Mid-day check-in', eod: 'End of day' };
@@ -442,16 +442,11 @@
     const stale = minutes > STALE_AFTER_MINUTES
       ? `<span class="stale">${esc(minutes >= 120 ? `${Math.floor(minutes / 60)} hours old` : `${Math.round(minutes)} minutes old`)}</span>`
       : '';
-    const link = safeLink(data.links && data.links.update);
-    const update = link
-      ? `<a class="btn-update" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Update now</a>`
-      : '';
     return `<header class="topbar wrap">
       <img class="topbar-logo" src="hyperkidz-logo.png" alt="Hyper Kidz" width="192" height="40">
       <div class="topbar-meta">
         ${stale}
         <span>Last updated ${esc(fmtStamp(data.generated_at, data.timezone))} ${esc(updatedBy(refresh))}.</span>
-        ${update}
         <button type="button" class="btn-quiet" data-action="sign-out">Sign out</button>
       </div>
     </header>`;
@@ -522,7 +517,7 @@
   function daySentence(data, day) {
     const soFar = day.so_far;
     if (day.in_progress && soFar && day.after_close) {
-      const base = `By close: ${fmtInt(soFar.guests_so_far)} guests and ${fmtMoney(soFar.revenue_so_far)} in net revenue, pulled at ${fmtClock(soFar.as_of, data.timezone)}. The end-of-day report adds funds received and Claude's analysis.`;
+      const base = `By close: ${fmtInt(soFar.guests_so_far)} guests and ${fmtMoney(soFar.revenue_so_far)} in net revenue, pulled at ${fmtClock(soFar.as_of, data.timezone)}. The end-of-day report adds funds received and the AI analysis.`;
       return day.forecast ? `${base} ${compareToForecast(day, day.forecast)}` : base;
     }
     if (day.in_progress && soFar) {
@@ -690,7 +685,7 @@
       `The read on ${fmtDayLong(date)}`,
       '',
       `<p class="read-summary">${esc(latest.summary)}</p>
-       <button type="button" class="btn-quiet" data-tab="analysis">Read all of Claude's analysis</button>`,
+       <button type="button" class="btn-quiet" data-tab="analysis">Read the full AI analysis</button>`,
       'band-lilac',
     );
   }
@@ -930,6 +925,13 @@
     return `<span class="ahead-gap">Needs ${esc(text)}</span>`;
   }
 
+  function laborBudgetText(budget, target) {
+    if (!budget || !(budget.over_by > 0)) return '';
+    const cuts = (budget.changes || []).filter((c) => c.cut > 0).map((c) => `${c.cut} at ${fmtHour(c.hour)}`);
+    const tail = cuts.length ? `: cut ${cuts.join(', ')} (saves ${fmtMoney(budget.cuts_save)})` : '';
+    return `<span class="ahead-gap">${esc(`Labor ${fmtMoney(budget.over_by)} over the ${fmtPct(target)} budget${tail}`)}</span>`;
+  }
+
   function aheadSection(data) {
     const rows = data.next_days || [];
     if (!rows.length) return '';
@@ -951,6 +953,7 @@
         <span class="ahead-meta">Labor ${fmtPct(r.expected_labor_pct)}, ${fmtHours(r.scheduled_hours)} scheduled</span>
         ${r.holiday_note ? `<span class="ahead-holiday">${esc(r.holiday_note)}</span>` : ''}
         ${shortStaffedText(r.short_staffed)}
+        ${laborBudgetText(r.labor_budget, data.targets.labor_pct)}
         <button type="button" class="btn-link" data-goto="forecasts" data-date="${r.date}">Why this forecast</button>
       </li>`).join('');
     return section('Next 7 days', 'Expected from the bookings already made plus the usual walk-ins for each weekday, against the staff scheduled in 7shifts.', `
@@ -997,7 +1000,7 @@
           <td>${fmtMoney(f.revenue)}</td><td>${fmtMoney(d.net_revenue)}</td><td${cls(f.revenue_error_pct)}>${missText(f.revenue_error_pct)}</td>
           <td><button type="button" class="btn-link" data-goto="forecasts" data-date="${d.date}">Why</button></td></tr>`;
       }).join('');
-    return section('How good the forecasts have been', `${sentence} Each forecast is the last one made before the day began.`, rows ? `<div class="table-wrap"><table>
+    return section('How good the forecasts have been', `${sentence} Each forecast is the last one made before the venue opened.`, rows ? `<div class="table-wrap"><table>
         <thead><tr><th scope="col">Day</th><th scope="col">Guests forecast</th><th scope="col">Guests actual</th><th scope="col">Guest forecast was</th><th scope="col">Revenue forecast</th><th scope="col">Revenue actual</th><th scope="col">Revenue forecast was</th><th scope="col"><span class="visually-hidden">Explanation</span></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '');
@@ -1037,20 +1040,19 @@
       <h3>${esc(MODE_NAMES[a.mode] || a.mode)}, ${esc(fmtStamp(a.run_at, data.timezone))}</h3>
       <p class="muted">${a.trigger === 'manual' ? 'Started by hand' : 'Scheduled'}. E-mail ${a.email_sent ? 'sent' : 'not sent'}; dashboard ${a.dashboard_published ? 'updated' : 'not updated'}.</p>
       ${a.has_analysis ? `<p class="read-summary">${esc(a.summary)}</p>
-        <div class="read-lists">${list('Staffing moves', a.staffing_actions)}${list('Coming up', a.predictions)}${list('What stood out', a.insights)}${list('Watch for', a.risks)}</div>
-        ${a.model ? `<p class="read-by">Written by ${esc(a.model)} from that run's numbers.</p>` : ''}`
-        : '<p>The run produced its numbers, but Claude did not write an analysis.</p>'}
+        <div class="read-lists">${list('Staffing moves', a.staffing_actions)}${a.mode === 'eod' ? '' : list('Coming up', a.predictions)}${list('What stood out', a.insights)}${list('Watch for', a.risks)}</div>
+        <p class="read-by">Written by AI from that run's numbers.</p>`
+        : '<p>The run produced its numbers, but no AI analysis was written.</p>'}
     </div>`).join('');
-    return `<div class="wrap day"><h1 class="day-title" id="day-title" tabindex="-1">Claude's analysis</h1>
+    return `<div class="wrap day"><h1 class="day-title" id="day-title" tabindex="-1">AI analysis</h1>
       <p class="day-sentence">${esc(fmtDayLong(date))}</p>
       ${statusItems ? `<ul class="status-list" aria-label="Scheduled reports">${statusItems}</ul>` : '<p class="section-lede">No scheduled reports for this day.</p>'}
-      ${cards || `<p class="empty">No analysis was written for this day. Claude writes one at the 1pm check-in and after the 9:45pm report, from the same numbers as the e-mail; the statuses above say whether those runs happened. Until one is written, the <button type="button" class="btn-link" data-goto="forecasts" data-date="${date}">Forecasts tab</button> explains each forecast from the numbers.</p>`}
+      ${cards || `<p class="empty">No analysis was written for this day. The AI writes one with the 7am morning report, at the 1pm check-in and after the 9:45pm report, from the same numbers as the e-mail; the statuses above say whether those runs happened. Until one is written, the <button type="button" class="btn-link" data-goto="forecasts" data-date="${date}">Forecasts tab</button> explains each forecast from the numbers.</p>`}
     </div>`;
   }
 
   function updatesTab(data) {
     const refresh = data.refresh || {};
-    const link = safeLink(data.links && data.links.update);
     const failures = refresh.failures || [];
     const usage = data.api_usage;
     const usageLine = usage
@@ -1064,8 +1066,6 @@
       <td class="notes">${esc(u.notes)}</td></tr>`).join('');
     return `<div class="wrap day"><h1 class="day-title" id="day-title" tabindex="-1">Updates</h1>
       <p class="day-sentence">Last updated ${esc(fmtStamp(data.generated_at, data.timezone))} ${esc(updatedBy(refresh))}. The dashboard refreshes every hour while the venue is open, and after the mid-day and end-of-day reports.</p>
-      ${link ? `<p><a class="btn-update" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Update now</a></p>
-        <p class="section-lede">Opens the refresh in Claude, where "Run now" starts it. New numbers appear here a few minutes later; reload the page to see them.</p>` : ''}
       ${usageLine}
       ${failures.length ? `<div class="callout" role="note"><strong>Some data could not be pulled in this update:</strong> ${esc(failures.join('; '))}</div>` : ''}
     </div>${section('Update log', 'Every refresh and report run, newest first.', rows ? `<div class="table-wrap"><table>
@@ -1325,7 +1325,7 @@
     const why = day && day.forecast && day.forecast.why;
     if (!why) return '';
     const comparable = why.comparable || {};
-    let text = `The forecast of ${fmtInt(why.guests)} guests was made ${why.made_at ? fmtStamp(why.made_at, data.timezone) : 'before the day began'} from ${comparableBasis(day.date, comparable)}`;
+    let text = `The forecast of ${fmtInt(why.guests)} guests was made ${why.made_at ? fmtStamp(why.made_at, data.timezone) : 'before opening'} from ${comparableBasis(day.date, comparable)}`;
     if (isNum(comparable.avg_guests)) text += ` (${fmtInt(comparable.avg_guests)} guests on average)`;
     if (isNum(why.booked_guests)) text += ` and the ${fmtInt(why.booked_guests)} guests already booked`;
     text += '.';
