@@ -1052,6 +1052,10 @@
     const refresh = data.refresh || {};
     const link = safeLink(data.links && data.links.update);
     const failures = refresh.failures || [];
+    const usage = data.api_usage;
+    const usageLine = usage
+      ? `<p class="section-lede">ROLLER API calls: ${fmtInt(usage.today)} today, ${fmtInt(usage.last_7_days)} in the last 7 days and ${fmtInt(usage.month_to_date)} this month, of ${fmtInt(usage.monthly_allowance)} included each month.</p>`
+      : '';
     const rows = (data.updates || []).map((u) => `<tr>
       <td>${esc(fmtStamp(u.run_at, data.timezone))}</td>
       <td class="text">${esc(UPDATE_KINDS[u.kind] || u.kind)}</td>
@@ -1062,6 +1066,7 @@
       <p class="day-sentence">Last updated ${esc(fmtStamp(data.generated_at, data.timezone))} ${esc(updatedBy(refresh))}. The dashboard refreshes every hour while the venue is open, and after the mid-day and end-of-day reports.</p>
       ${link ? `<p><a class="btn-update" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Update now</a></p>
         <p class="section-lede">Opens the refresh in Claude, where "Run now" starts it. New numbers appear here a few minutes later; reload the page to see them.</p>` : ''}
+      ${usageLine}
       ${failures.length ? `<div class="callout" role="note"><strong>Some data could not be pulled in this update:</strong> ${esc(failures.join('; '))}</div>` : ''}
     </div>${section('Update log', 'Every refresh and report run, newest first.', rows ? `<div class="table-wrap"><table>
       <thead><tr><th scope="col">When</th><th scope="col" class="text">What</th><th scope="col" class="text">Started</th><th scope="col" class="text">Result</th><th scope="col" class="text">Details</th></tr></thead>
