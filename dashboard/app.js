@@ -47,7 +47,7 @@
 
   const TABS = [
     { id: 'overview', label: 'Overview' },
-    { id: 'guests', label: 'Guests' },
+    { id: 'guests', label: 'Walk-ins' },
     { id: 'revenue', label: 'Revenue' },
     { id: 'staff', label: 'Staff' },
     { id: 'calendar', label: 'Calendar' },
@@ -88,7 +88,7 @@
   const CATEGORY_LABELS = {
     admission: 'Admission',
     party: 'Parties',
-    food: 'Food',
+    food: 'Stock check',
     retail: 'Retail',
     membership: 'Memberships',
     other: 'Fees and other',
@@ -99,13 +99,14 @@
     { key: 'toddlers', label: 'Toddlers 1-2', cls: 'grp-toddlers' },
     { key: 'infants', label: 'Infants under 1', cls: 'grp-infants' },
     { key: 'other_passes', label: 'Other kid passes', cls: 'grp-other' },
-    { key: 'party_guests', label: 'Party guests', cls: 'grp-party' },
+    { key: 'party_guests', label: 'Party kids', cls: 'grp-party' },
     { key: 'adults', label: 'Adults', cls: 'grp-adults' },
   ];
 
   const encoder = new TextEncoder();
   const $ = (selector, root = document) => root.querySelector(selector);
   const state = { data: null, focus: null, tab: 'overview', showAllAttention: false, metric: 'net_revenue' };
+  let tipSerial = 0;
 
   /** Thrown when the username/password pair cannot unwrap the data key. */
   class LoginError extends Error {}
@@ -343,7 +344,7 @@
   const fmtSigned = (v, format) => (isNum(v) ? `${v > 0 ? '+' : v < 0 ? MINUS : ''}${format(Math.abs(v))}` : DASH);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const groupLabel = (key) => (GUEST_GROUPS.find((g) => g.key === key) || { label: key }).label;
-  const categoryLabel = (key) => CATEGORY_LABELS[key] || key;
+  const categoryLabel = (key) => ((state.data && state.data.category_labels) || {})[key] || CATEGORY_LABELS[key] || key;
 
   /** Calendar dates travel as YYYY-MM-DD; format them at noon UTC so no timezone shifts the day. */
   function dateOf(iso) {
@@ -468,6 +469,39 @@
     </div></div>`;
   }
 
+  /** An "i" button by a label that opens where the number comes from (``data.terms``, from src/terms.py). */
+  function infoTip(term, extra = '') {
+    const entry = term && ((state.data && state.data.terms) || {})[term];
+    if (!entry) return '';
+    const id = `tip-${term}-${++tipSerial}`;
+    return `<button type="button" class="info-btn" data-action="info" aria-expanded="false" aria-controls="${id}" aria-label="${esc(`Where ${entry.label} comes from`)}">i</button>`
+      + `<span class="info-tip" id="${id}" role="note" hidden>${esc(entry.info)}${extra ? ` ${esc(extra)}` : ''}</span>`;
+  }
+
+  /** The ROLLER product groups counted as stock check, named in its popover. */
+  function stockGroups(data) {
+    const groups = ((data && data.category_groups) || {}).food || [];
+    return groups.length ? `ROLLER product groups: ${groups.join(', ')}.` : '';
+  }
+
+  function closeInfo(except) {
+    document.querySelectorAll('.info-btn[aria-expanded="true"]').forEach((button) => {
+      if (button === except) return;
+      button.setAttribute('aria-expanded', 'false');
+      const tip = document.getElementById(button.getAttribute('aria-controls'));
+      if (tip) tip.hidden = true;
+    });
+  }
+
+  function toggleInfo(button) {
+    const tip = document.getElementById(button.getAttribute('aria-controls'));
+    if (!tip) return;
+    const open = button.getAttribute('aria-expanded') !== 'true';
+    closeInfo(button);
+    button.setAttribute('aria-expanded', String(open));
+    tip.hidden = !open;
+  }
+
   function section(title, lede, body, band) {
     const id = `s-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
     return `<section class="${band ? `band ${band}` : 'plain'}" aria-labelledby="${id}"><div class="wrap">
@@ -481,7 +515,7 @@
     const ahead = (data.next_days || []).find((d) => d.date === date);
     const future = date > data.focus_date;
     const forecast = ahead
-      ? `<p>Expected: ${fmtInt(ahead.expected_guests)} guests and ${fmtMoney(ahead.expected_revenue)} in net revenue, with labor at ${fmtPct(ahead.expected_labor_pct)} of revenue.</p>`
+      ? `<p>Expected: ${fmtInt(ahead.expected_guests)} walk-ins and ${fmtMoney(ahead.expected_revenue)} in net revenue, with labor at ${fmtPct(ahead.expected_labor_pct)} of revenue.</p>`
       : '';
     return `<div class="wrap empty">
       <h1 class="day-title">${esc(fmtDayLong(date))}</h1>
@@ -516,20 +550,20 @@
   function daySentence(data, day) {
     const soFar = day.so_far;
     if (day.in_progress && soFar && day.after_close) {
-      const base = `By close: ${fmtInt(soFar.guests_so_far)} guests and ${fmtMoney(soFar.revenue_so_far)} in net revenue, pulled at ${fmtClock(soFar.as_of, data.timezone)}. The end-of-day report adds funds received and the AI analysis.`;
+      const base = `By close: ${fmtInt(soFar.guests_so_far)} walk-ins and ${fmtMoney(soFar.revenue_so_far)} in net revenue, pulled at ${fmtClock(soFar.as_of, data.timezone)}. The end-of-day report adds funds received and the AI analysis.`;
       return day.forecast ? `${base} ${compareToForecast(day, day.forecast)}` : base;
     }
     if (day.in_progress && soFar) {
-      let text = `So far today: ${fmtInt(soFar.guests_so_far)} guests and ${fmtMoney(soFar.revenue_so_far)} in net revenue by ${fmtClock(soFar.as_of, data.timezone)}.`;
+      let text = `So far today: ${fmtInt(soFar.guests_so_far)} walk-ins and ${fmtMoney(soFar.revenue_so_far)} in net revenue by ${fmtClock(soFar.as_of, data.timezone)}.`;
       if (isNum(soFar.projected_guests_so_far)) {
-        text += ` The forecast for these hours was ${fmtInt(soFar.projected_guests_so_far)} guests and ${fmtMoney(soFar.projected_revenue_so_far)}.`;
+        text += ` The forecast for these hours was ${fmtInt(soFar.projected_guests_so_far)} walk-ins and ${fmtMoney(soFar.projected_revenue_so_far)}.`;
       }
       if (isNum(soFar.expected_total_guests)) {
-        text += ` Expected at close: ${fmtInt(soFar.expected_total_guests)} guests and ${fmtMoney(soFar.expected_total_revenue)}, with labor at ${fmtPct(soFar.expected_close_labor_pct)} of revenue.`;
+        text += ` Expected at close: ${fmtInt(soFar.expected_total_guests)} walk-ins and ${fmtMoney(soFar.expected_total_revenue)}, with labor at ${fmtPct(soFar.expected_close_labor_pct)} of revenue.`;
       }
       return text;
     }
-    const base = `${fmtInt(day.guests)} guests and ${fmtMoney(day.net_revenue)} in net revenue.`;
+    const base = `${fmtInt(day.guests)} walk-ins and ${fmtMoney(day.net_revenue)} in net revenue.`;
     return day.forecast ? `${base} ${compareToForecast(day, day.forecast)}` : base;
   }
 
@@ -538,8 +572,8 @@
     if (isNum(forecast.guests) && isNum(day.guests)) {
       const diff = Math.round(day.guests - forecast.guests);
       parts.push(diff === 0
-        ? `guests matched the forecast of ${fmtInt(forecast.guests)}`
-        : `${fmtInt(Math.abs(diff))} ${diff > 0 ? 'more' : 'fewer'} guests than the forecast of ${fmtInt(forecast.guests)}`);
+        ? `walk-ins matched the forecast of ${fmtInt(forecast.guests)}`
+        : `${fmtInt(Math.abs(diff))} ${diff > 0 ? 'more' : 'fewer'} walk-ins than the forecast of ${fmtInt(forecast.guests)}`);
     }
     if (isNum(forecast.revenue) && isNum(day.net_revenue)) {
       const diff = day.net_revenue - forecast.revenue;
@@ -557,19 +591,19 @@
     const soFar = day.in_progress && !day.after_close ? day.so_far : null;
     const guestsNote = soFar
       ? `Expected at close ${fmtInt(soFar.expected_total_guests)}`
-      : forecast ? `Forecast ${fmtInt(forecast.guests)}` : `${fmtInt(day.walk_ins)} walk-ins`;
+      : forecast ? `Forecast ${fmtInt(forecast.guests)}` : `${fmtInt(day.walk_ins)} same-day bookings`;
     const revenueNote = soFar
       ? `Expected at close ${fmtMoney(soFar.expected_total_revenue)}`
       : forecast ? `Forecast ${fmtMoney(forecast.revenue)}` : `After ${fmtMoney(day.refunds)} in refunds`;
     const rows = [
-      ['Guests', fmtInt(day.guests), guestsNote],
-      ['Passes booked', fmtInt(day.passes), 'Every pass, adults and memberships included'],
-      ['Net revenue', fmtMoney(day.net_revenue), revenueNote],
-      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken, ${fmtMoney(day.tips)} in tips left out` : 'Known after close'],
-      ['Labor cost', fmtMoney(day.actual_labor), `${fmtPct(day.labor_pct)} of revenue, target ${fmtPct(data.targets.labor_pct)}`],
-      ['Labor hours', fmtHours(day.actual_hours), `${fmtHours(day.scheduled_hours)} scheduled`],
+      ['Walk-ins', fmtInt(day.guests), guestsNote, 'walk_ins'],
+      ['Total guests', fmtInt(day.passes), 'Every pass, adults and memberships included', 'total_guests'],
+      ['Net revenue', fmtMoney(day.net_revenue), revenueNote, 'net_revenue'],
+      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken, ${fmtMoney(day.tips)} in tips left out` : 'Known after close', 'funds_received'],
+      ['Labor cost', fmtMoney(day.actual_labor), `${fmtPct(day.labor_pct)} of revenue, target ${fmtPct(data.targets.labor_pct)}`, 'labor_cost'],
+      ['Labor hours', fmtHours(day.actual_hours), `${fmtHours(day.scheduled_hours)} scheduled`, 'labor_hours'],
     ];
-    return `<dl class="numbers">${rows.map(([label, value, sub]) => `<div class="number"><dt>${esc(label)}</dt><dd>${esc(value)}<span class="sub">${esc(sub)}</span></dd></div>`).join('')}</dl>`;
+    return `<dl class="numbers">${rows.map(([label, value, sub, term]) => `<div class="number"><dt>${esc(label)}${infoTip(term)}</dt><dd>${esc(value)}<span class="sub">${esc(sub)}</span></dd></div>`).join('')}</dl>`;
   }
 
   function changeChip(value, label, { points = false, lowerIsBetter = false } = {}) {
@@ -592,7 +626,7 @@
     if (!rows.length) return '';
     const lines = rows.map(([label, change, ref]) => `<p class="growth">
       <span class="growth-label">${esc(label)}${ref ? `, ${esc(fmtDayShort(ref))}` : ''}</span>
-      ${changeChip(change.guests, 'Guests')}${changeChip(change.passes, 'Passes')}${changeChip(change.net_revenue, 'Revenue')}
+      ${changeChip(change.guests, 'Walk-ins')}${changeChip(change.passes, 'Total guests')}${changeChip(change.net_revenue, 'Revenue')}
       ${changeChip(change.labor_pct, 'Labor', { points: true, lowerIsBetter: true })}
     </p>`).join('');
     return `<div class="wrap growth-wrap"><h2 class="section-title small">Growth</h2>${lines}${declineCallout(day)}</div>`;
@@ -602,13 +636,13 @@
     const decline = day.growth && day.growth.decline;
     if (!decline) return '';
     const change = day.growth.vs_last_week;
-    const fell = decline.metrics.map((m) => `${m === 'guests' ? 'guests' : 'revenue'} ${Math.abs(change[m]).toFixed(0)}%`).join(' and ');
+    const fell = decline.metrics.map((m) => `${m === 'guests' ? 'walk-ins' : 'revenue'} ${Math.abs(change[m]).toFixed(0)}%`).join(' and ');
     const drivers = decline.drivers || {};
     const parts = [
       ...(drivers.guest_groups || []).slice(0, 3).map((r) => `${groupLabel(r.name).toLowerCase()} ${fmtSigned(r.change, fmtInt)}`),
       ...(drivers.revenue_categories || []).slice(0, 3).map((r) => `${categoryLabel(r.name).toLowerCase()} ${fmtSigned(r.change, fmtMoney)}`),
       ...(drivers.hours || []).slice(0, 3).map((r) => `${fmtHour(Number(r.name))} arrivals ${fmtSigned(r.change, fmtInt)}`),
-      ...(drivers.bookings || []).map((r) => `${r.name === 'walk_ins' ? 'walk-in bookings' : 'advance bookings'} ${fmtSigned(r.change, fmtInt)}`),
+      ...(drivers.bookings || []).map((r) => `${r.name === 'walk_ins' ? 'same-day bookings' : 'advance bookings'} ${fmtSigned(r.change, fmtInt)}`),
     ];
     return `<div class="callout" role="note"><strong>Down against ${esc(fmtDayLong(decline.baseline_date))}:</strong>
       ${esc(fell)} lower. Biggest drops: ${esc(parts.join('; ') || 'spread evenly across the day')}.</div>`;
@@ -620,7 +654,7 @@
         <span class="key"><span class="dot ok"></span>Within the labor budget</span>
         <span class="key"><span class="dot over"></span>Over the labor budget</span>
         <span class="key"><span class="ring"></span>Forecast</span>
-        <span>Ball size is the guests arriving in that hour.</span>
+        <span>Ball size is the walk-ins arriving in that hour.</span>
       </p>`;
   }
 
@@ -660,14 +694,14 @@
   function pitLabel(rows) {
     const actual = rows.filter((r) => isNum(r.arrivals));
     const span = `from ${fmtHour(rows[0].hour)} to ${fmtHour(rows[rows.length - 1].hour + 1)}`;
-    if (!actual.length) return `Guests by hour ${span}`;
+    if (!actual.length) return `Walk-ins by hour ${span}`;
     const busiest = actual.reduce((a, b) => (b.arrivals > a.arrivals ? b : a));
-    return `Guests arriving each hour ${span}. Busiest was ${fmtHour(busiest.hour)} with ${fmtInt(busiest.arrivals)} guests.`;
+    return `Walk-ins arriving each hour ${span}. Busiest was ${fmtHour(busiest.hour)} with ${fmtInt(busiest.arrivals)} walk-ins.`;
   }
 
   function hourTitle(row) {
     const parts = [fmtHour(row.hour)];
-    if (isNum(row.arrivals)) parts.push(`${fmtInt(row.arrivals)} guests arrived`);
+    if (isNum(row.arrivals)) parts.push(`${fmtInt(row.arrivals)} walk-ins arrived`);
     if (isNum(row.forecast_arrivals)) parts.push(`forecast ${fmtInt(row.forecast_arrivals)}`);
     const staff = row.expected ? row.staff_scheduled : row.staff_actual;
     if (isNum(staff)) parts.push(`${staff} staff ${row.expected ? 'scheduled' : 'on the clock'}`);
@@ -715,7 +749,7 @@
   function guestMix(day) {
     const groups = day.guests_by_group || {};
     const rows = GUEST_GROUPS.map((g) => ({ ...g, count: groups[g.key] || 0 })).filter((g) => g.count > 0);
-    if (!rows.length) return '<p class="muted">No guest breakdown was stored for this day.</p>';
+    if (!rows.length) return '<p class="muted">No pass breakdown was stored for this day.</p>';
     const people = rows.reduce((sum, g) => sum + g.count, 0);
     const adults = groups.adults || 0;
     const underThree = (groups.infants || 0) + (groups.toddlers || 0);
@@ -747,24 +781,24 @@
         <td>${lastWeek ? fmtInt(before[g.key] || 0) : DASH}</td>
         <td>${lastWeek ? fmtSigned((groups[g.key] || 0) - (before[g.key] || 0), fmtInt) : DASH}</td></tr>`).join('');
     const numbers = [
-      ['Guests', fmtInt(day.guests)],
-      ['Passes booked', fmtInt(day.passes)],
-      ['Walk-in bookings', fmtInt(day.walk_ins)],
-      ['Advance bookings', fmtInt(day.advance_bookings)],
-      ['Memberships sold', fmtInt(day.memberships_sold)],
+      ['Walk-ins', fmtInt(day.guests), 'walk_ins'],
+      ['Total guests', fmtInt(day.passes), 'total_guests'],
+      ['Same-day bookings', fmtInt(day.walk_ins), 'same_day_bookings'],
+      ['Advance bookings', fmtInt(day.advance_bookings), 'advance_bookings'],
+      ['Memberships sold', fmtInt(day.memberships_sold), 'memberships_sold'],
     ];
     const hours = data.hourly[day.date] || [];
     const hourRows = hours.map((r) => `<tr class="${r.expected ? 'is-expected' : ''}"><td>${fmtHour(r.hour)}${r.expected ? ' <span class="muted">expected</span>' : ''}</td>
       <td>${fmtInt(r.arrivals)}</td><td>${fmtInt(r.forecast_arrivals)}</td><td>${fmtInt(r.on_floor)}</td></tr>`).join('');
     return [
       `<section class="day wrap" aria-labelledby="day-title">${navDayTitle(data, day)}
-        <dl class="kv">${numbers.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+        <dl class="kv">${numbers.map(([k, v, term]) => `<div><dt>${esc(k)}${infoTip(term)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
       </section>`,
-      section('Who came', 'People by pass type, read from the ROLLER pass names. Adults are not counted as guests.', `${guestMix(day)}
+      section('Who came', 'People by pass type, read from the ROLLER pass names. Adults are not counted as walk-ins.', `${guestMix(day)}
         ${groupRows ? `<div class="table-wrap"><table><thead><tr><th scope="col">Group</th><th scope="col">This day</th>
         <th scope="col">${lastWeek ? esc(fmtDayShort(lastWeek.date)) : 'Last week'}</th><th scope="col">Change</th></tr></thead>
         <tbody>${groupRows}</tbody></table></div>` : ''}`),
-      hours.length ? section('Guests by hour', 'Arrivals each hour against the forecast, and how many were on the floor.', `<div class="table-wrap"><table>
+      hours.length ? section('Walk-ins by hour', 'Arrivals each hour against the forecast, and how many were on the floor.', `<div class="table-wrap"><table>
         <thead><tr><th scope="col">Hour</th><th scope="col">Arrived</th><th scope="col">Forecast</th><th scope="col">On the floor</th></tr></thead>
         <tbody>${hourRows}</tbody></table></div>`) : '',
       usualWeekSection(data),
@@ -781,24 +815,24 @@
     const before = (lastWeek && lastWeek.revenue_by_category) || {};
     const gross = Object.values(categories).reduce((sum, v) => sum + (v || 0), 0);
     const names = Object.keys({ ...categories, ...before }).sort((a, b) => (categories[b] || 0) - (categories[a] || 0));
-    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}</td><td>${fmtMoney(categories[name] || 0)}</td>
+    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}${name === 'food' ? infoTip('stock_check', stockGroups(data)) : ''}</td><td>${fmtMoney(categories[name] || 0)}</td>
       <td>${gross ? fmtPct(((categories[name] || 0) / gross) * 100) : DASH}</td>
       <td>${lastWeek ? fmtMoney(before[name] || 0) : DASH}</td>
       <td>${lastWeek ? fmtSigned((categories[name] || 0) - (before[name] || 0), fmtMoney) : DASH}</td></tr>`).join('');
     const methods = Object.entries(day.payments_by_method || {});
     const numbers = [
-      ['Net revenue', fmtMoney(day.net_revenue)],
+      ['Net revenue', fmtMoney(day.net_revenue), 'net_revenue'],
       ['Gross revenue', fmtMoney(day.gross_revenue)],
       ['Refunds', fmtMoney(day.refunds)],
-      ['Funds received', fmtMoney(day.funds_received)],
+      ['Funds received', fmtMoney(day.funds_received), 'funds_received'],
       ['Tips', fmtMoney(day.tips)],
     ];
     const roller = safeLink(data.links && data.links.roller);
     return [
       `<section class="day wrap" aria-labelledby="day-title">${navDayTitle(data, day)}
-        <dl class="kv">${numbers.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+        <dl class="kv">${numbers.map(([k, v, term]) => `<div><dt>${esc(k)}${infoTip(term)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
       </section>`,
-      section('Revenue by category', 'Before sales tax, counted on the day guests visit, against the same day last week.', `<div class="table-wrap"><table>
+      section('Revenue by category', 'Before sales tax, counted on the day of the visit, against the same day last week.', `<div class="table-wrap"><table>
         <thead><tr><th scope="col">Category</th><th scope="col">Amount</th><th scope="col">Share</th>
         <th scope="col">${lastWeek ? esc(fmtDayShort(lastWeek.date)) : 'Last week'}</th><th scope="col">Change</th></tr></thead>
         <tbody>${categoryRows}</tbody></table></div>`),
@@ -866,7 +900,7 @@
       : isNum(p.hosts_scheduled) ? `${p.hosts_scheduled} host${p.hosts_scheduled === 1 ? '' : 's'}` : '';
     const people = isNum(p.kids)
       ? `${fmtInt(p.kids)} kids${p.adults ? `, ${fmtInt(p.adults)} adults` : ''}`
-      : `${fmtInt(p.guests)} guests`;
+      : `${fmtInt(p.guests)} kids`;
     const rooms = (p.rooms || []).length ? p.rooms.join(' and ') : 'Room not noted';
     const money = isNum(p.total)
       ? `${fmtCents(p.paid)} paid of ${fmtCents(p.total)}${p.owing > 0.005 ? `, <span class="chip under">${esc(fmtCents(p.owing))} owing</span>` : ''}`
@@ -886,8 +920,8 @@
       const ahead = (data.next_days || []).find((n) => n.date === d);
       const actual = data.days.find((n) => n.date === d);
       const expected = actual
-        ? `${fmtInt(actual.guests)} guests, ${fmtMoney(actual.net_revenue)}${actual.in_progress ? ' so far' : ''}`
-        : ahead ? `Expected ${fmtInt(ahead.expected_guests)} guests, ${fmtMoney(ahead.expected_revenue)}` : '';
+        ? `${fmtInt(actual.guests)} walk-ins, ${fmtMoney(actual.net_revenue)}${actual.in_progress ? ' so far' : ''}`
+        : ahead ? `Expected ${fmtInt(ahead.expected_guests)} walk-ins, ${fmtMoney(ahead.expected_revenue)}` : '';
       return `<div class="agenda-day">
         <h3>${esc(fmtDayLong(d))}</h3>
         ${expected ? `<p class="section-lede">${esc(expected)}</p>` : ''}
@@ -899,19 +933,19 @@
       </div>`;
     }).join('');
     return `<div class="wrap day"><h1 class="day-title" id="day-title" tabindex="-1">Calendar</h1>
-      <p class="section-lede">Seven days from ${esc(fmtDayLong(start))}: parties with their rooms, guests and payments from ROLLER, and the shifts published in 7shifts. Rooms come from the booking notes.</p>
+      <p class="section-lede">Seven days from ${esc(fmtDayLong(start))}: parties with their rooms, kids and payments from ROLLER, and the shifts published in 7shifts. Rooms come from the booking notes.</p>
       ${blocks}</div>`;
   }
 
   // ------------------------------------------------------------------ forecasts
 
-  /** A day ahead against its labor budget: how many guests one staff member covers, and the cuts that keep labor within it. */
+  /** A day ahead against its labor budget: how many walk-ins one staff member covers, and the cuts that keep labor within it. */
   function laborBudgetText(budget, target) {
     if (!budget) return '';
     const parts = [];
     if (isNum(budget.guests_per_staff_at_budget)) {
       const scheduled = isNum(budget.guests_per_staff_scheduled) ? `, 1 per ${fmtInt(budget.guests_per_staff_scheduled)} as scheduled` : '';
-      parts.push(`<span class="ahead-meta">${esc(`Budget pays for 1 staff per ${fmtInt(budget.guests_per_staff_at_budget)} guests${scheduled}`)}</span>`);
+      parts.push(`<span class="ahead-meta">${esc(`Budget pays for 1 staff per ${fmtInt(budget.guests_per_staff_at_budget)} walk-ins${scheduled}`)}</span>`);
     }
     const cuts = (budget.cuts || []).map((c) => `${c.cut} at ${fmtHour(c.hour)}`);
     const tail = cuts.length ? `: cut ${cuts.join(', ')} (saves ${fmtMoney(budget.cuts_save)})` : '';
@@ -937,7 +971,7 @@
         <span class="ahead-date">${esc(fmtDay(r.date, { month: 'short', day: 'numeric' }))}</span>
         <span class="ahead-bar" aria-hidden="true"><span data-height="${((r.expected_revenue || 0) / peak).toFixed(3)}"></span></span>
         <strong class="ahead-rev">${fmtMoney(r.expected_revenue)}</strong>
-        <span class="ahead-meta">${fmtInt(r.expected_guests)} guests</span>
+        <span class="ahead-meta">${fmtInt(r.expected_guests)} walk-ins</span>
         ${isNum(r.booked_guests) ? `<span class="ahead-meta">${fmtInt(r.booked_guests)} already booked</span>` : ''}
         ${isNum(r.revenue_change_pct) ? `<span class="ahead-meta">${esc(fmtSigned(r.revenue_change_pct, (v) => `${v.toFixed(0)}%`))} revenue vs last week</span>` : ''}
         ${isNum(r.revenue_vs_four_week_pct) ? `<span class="ahead-meta">${esc(fmtSigned(r.revenue_vs_four_week_pct, (v) => `${v.toFixed(0)}%`))} vs the 4-week average</span>` : ''}
@@ -946,16 +980,16 @@
         ${laborBudgetText(r.labor_budget, data.targets.labor_pct)}
         <button type="button" class="btn-link" data-goto="forecasts" data-date="${r.date}">Why this forecast</button>
       </li>`).join('');
-    return section('Next 7 days', 'Expected from the bookings already made plus the usual walk-ins for each weekday, against the staff scheduled in 7shifts.', `
+    return section('Next 7 days', 'Expected from the bookings already made plus the usual same-day arrivals for each weekday, against the staff scheduled in 7shifts.', `
       <div class="ahead-scroll"><ol class="ahead">${items}</ol></div>
-      <p class="ahead-total">${fmtInt(totals.guests)} guests and ${fmtMoney(totals.revenue)} in net revenue expected, with scheduled labor at ${fmtPct(laborPct)} of revenue.</p>`, 'band-sky');
+      <p class="ahead-total">${fmtInt(totals.guests)} walk-ins and ${fmtMoney(totals.revenue)} in net revenue expected, with scheduled labor at ${fmtPct(laborPct)} of revenue.</p>`, 'band-sky');
   }
 
   function weekToDateSection(data) {
     const week = data.week_to_date;
     if (!week || !week.this_week || !week.this_week.days) return '';
     const change = week.change_pct || {};
-    const rows = [['Guests', 'guests', fmtInt], ['Passes', 'passes', fmtInt], ['Net revenue', 'net_revenue', fmtMoney], ['Labor cost', 'actual_labor', fmtMoney]]
+    const rows = [['Walk-ins', 'guests', fmtInt], ['Total guests', 'passes', fmtInt], ['Net revenue', 'net_revenue', fmtMoney], ['Labor cost', 'actual_labor', fmtMoney]]
       .map(([label, key, format]) => `<tr><td>${label}</td><td>${format(week.this_week[key])}</td><td>${format(week.last_week[key])}</td>
         <td>${isNum(change[key]) ? esc(fmtSigned(change[key], (v) => `${v.toFixed(1)}%`)) : DASH}</td></tr>`).join('');
     return section('Week to date', `Monday to ${fmtDayLong(week.through)} (${week.this_week.days} days) against the same days last week.`, `<div class="table-wrap"><table>
@@ -973,10 +1007,10 @@
   function accuracySection(data) {
     const accuracy = data.accuracy;
     if (!accuracy || !accuracy.days) return '';
-    let sentence = `Over the last ${accuracy.days} days with a forecast, guest forecasts were off by ${fmtPct(accuracy.mape_guests)} on average and revenue forecasts by ${fmtPct(accuracy.mape_revenue)}.`;
+    let sentence = `Over the last ${accuracy.days} days with a forecast, walk-in forecasts were off by ${fmtPct(accuracy.mape_guests)} on average and revenue forecasts by ${fmtPct(accuracy.mape_revenue)}.`;
     const bias = accuracy.bias_guests_pct;
     if (isNum(bias) && Math.abs(bias) >= BIAS_WORTH_MENTIONING) {
-      sentence += ` Guest forecasts have run ${bias < 0 ? 'low' : 'high'} by ${Math.abs(bias).toFixed(0)}%, so plan for ${bias < 0 ? 'more' : 'fewer'} guests than forecast.`;
+      sentence += ` Walk-in forecasts have run ${bias < 0 ? 'low' : 'high'} by ${Math.abs(bias).toFixed(0)}%, so plan for ${bias < 0 ? 'more' : 'fewer'} walk-ins than forecast.`;
     }
     const rows = data.days
       .filter((d) => d.forecast && !d.in_progress)
@@ -991,7 +1025,7 @@
           <td><button type="button" class="btn-link" data-goto="forecasts" data-date="${d.date}">Why</button></td></tr>`;
       }).join('');
     return section('How good the forecasts have been', `${sentence} Each forecast is the last one made before the venue opened.`, rows ? `<div class="table-wrap"><table>
-        <thead><tr><th scope="col">Day</th><th scope="col">Guests forecast</th><th scope="col">Guests actual</th><th scope="col">Guest forecast was</th><th scope="col">Revenue forecast</th><th scope="col">Revenue actual</th><th scope="col">Revenue forecast was</th><th scope="col"><span class="visually-hidden">Explanation</span></th></tr></thead>
+        <thead><tr><th scope="col">Day</th><th scope="col">Walk-ins forecast</th><th scope="col">Walk-ins actual</th><th scope="col">Walk-in forecast was</th><th scope="col">Revenue forecast</th><th scope="col">Revenue actual</th><th scope="col">Revenue forecast was</th><th scope="col"><span class="visually-hidden">Explanation</span></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '');
   }
@@ -1000,7 +1034,7 @@
     const ahead = (data.next_days || []).find((d) => d.date === date) || null;
     let lead = 'Pick a day with a forecast to see why it said what it did.';
     if (day) lead = daySentence(data, day);
-    else if (ahead) lead = `Expected: ${fmtInt(ahead.expected_guests)} guests and ${fmtMoney(ahead.expected_revenue)} in net revenue.`;
+    else if (ahead) lead = `Expected: ${fmtInt(ahead.expected_guests)} walk-ins and ${fmtMoney(ahead.expected_revenue)} in net revenue.`;
     return [
       `<section class="day wrap" aria-labelledby="day-title"><h1 class="day-title" id="day-title" tabindex="-1">Forecasts</h1>
         <p class="day-sentence">${esc(fmtDayLong(date))}. ${esc(lead)}</p></section>`,
@@ -1089,20 +1123,20 @@
         const dayNumber = Number(date.slice(8));
         if (!d) return `<div class="cell cell-empty" aria-hidden="true"><span class="cell-day">${dayNumber}</span></div>`;
         const focused = date === focusDate;
-        const label = `${fmtDayLong(date)}: ${fmtInt(d.guests)} guests, ${fmtMoney(d.net_revenue)} net revenue${d.in_progress ? ' so far' : ''}`;
+        const label = `${fmtDayLong(date)}: ${fmtInt(d.guests)} walk-ins, ${fmtMoney(d.net_revenue)} net revenue${d.in_progress ? ' so far' : ''}`;
         return `<button type="button" class="cell${focused ? ' is-focus' : ''}" data-focus="${date}" data-tint="${((d[metric] || 0) / peak).toFixed(3)}" aria-pressed="${focused}" aria-label="${esc(label)}">
           <span class="cell-day">${dayNumber}</span>
           <span class="cell-rev">${show(d[metric])}</span>
-          <span class="cell-guests">${metric === 'guests' ? fmtMoneyShort(d.net_revenue) : `${fmtInt(d.guests)} guests`}</span>
+          <span class="cell-guests">${metric === 'guests' ? fmtMoneyShort(d.net_revenue) : `${fmtInt(d.guests)} walk-ins`}</span>
           ${d.holiday ? `<span class="cell-holiday">${esc(d.holiday)}</span>` : ''}
         </button>`;
       }).join('');
       const laborPct = totals.revenue ? (totals.labor / totals.revenue) * 100 : null;
       const partial = present.length < 7 ? `, ${present.length} of 7 days` : '';
       rows.push(`<div class="week-label">${fmtMDY(monday)} – ${fmtMDY(isoAdd(monday, 6))}</div>${cells}
-        <div class="week-total">${fmtMoney(totals.revenue)}, ${fmtInt(totals.guests)} guests<br>Labor ${fmtPct(laborPct)}${partial}</div>`);
+        <div class="week-total">${fmtMoney(totals.revenue)}, ${fmtInt(totals.guests)} walk-ins<br>Labor ${fmtPct(laborPct)}${partial}</div>`);
     }
-    return section('Week by week', `Each square is one day, shaded by ${metric === 'guests' ? 'guests' : 'net revenue'}, so the same weekday lines up down each column. Pick a day to open it.`,
+    return section('Week by week', `Each square is one day, shaded by ${metric === 'guests' ? 'walk-ins' : 'net revenue'}, so the same weekday lines up down each column. Pick a day to open it.`,
       `<div class="weeks">${heads}${rows.join('')}</div>`);
   }
 
@@ -1156,7 +1190,7 @@
     const peak = Math.max(1, ...bars.map((b) => Math.max(b.value || 0, b.forecast || 0)));
     const height = (v) => (Math.max(0, v || 0) / peak) * (CHART_FLOOR - CHART_TOP);
     const width = bars.length * BAR_WIDTH;
-    const label = `${guests ? 'Guests' : 'Net revenue'} for the last ${past.length} days and expected for the next ${ahead.length}`;
+    const label = `${guests ? 'Walk-ins' : 'Net revenue'} for the last ${past.length} days and expected for the next ${ahead.length}`;
     const parts = [
       `<svg class="tl-svg" viewBox="0 0 ${width} ${CHART_HEIGHT}" data-min-width="${bars.length * 36}" role="img" aria-label="${esc(label)}">`,
       `<line class="pit-floor" x1="0" x2="${width}" y1="${CHART_FLOOR}" y2="${CHART_FLOOR}"></line>`,
@@ -1195,7 +1229,7 @@
     const guests = metric === 'guests';
     const monday = isoAdd(data.focus_date, -mondayIndex(data.focus_date));
     const within = (iso, start) => iso >= start && iso <= isoAdd(start, 6);
-    const fmt = guests ? (v) => `${fmtInt(v)} guests` : fmtMoney;
+    const fmt = guests ? (v) => `${fmtInt(v)} walk-ins` : fmtMoney;
     const done = data.days.filter((d) => within(d.date, monday));
     const doneDates = new Set(done.map((d) => d.date));
     const expected = (data.next_days || []).filter((d) => within(d.date, monday) && !doneDates.has(d.date));
@@ -1220,7 +1254,7 @@
   function timelineSection(data) {
     const chart = timelineChart(data, state.metric);
     if (!chart) return '';
-    const toggle = [['net_revenue', 'Revenue'], ['guests', 'Guests']]
+    const toggle = [['net_revenue', 'Revenue'], ['guests', 'Walk-ins']]
       .map(([key, label]) => `<button type="button" data-metric="${key}" aria-pressed="${state.metric === key}">${label}</button>`)
       .join('');
     const legend = `<p class="pit-legend">
@@ -1238,7 +1272,7 @@
     );
   }
 
-  /** Days down, hours across; each cell shaded by guests, outlined when more staff are scheduled than the labor budget pays for. */
+  /** Days down, hours across; each cell shaded by walk-ins, outlined when more staff are scheduled than the labor budget pays for. */
   function heatGrid(rows, { tone, value, label, cellTitle, cut }) {
     const hours = [...new Set(rows.flatMap((r) => r.hours.map((h) => h.hour)))].sort((a, b) => a - b);
     const peak = Math.max(1, ...rows.flatMap((r) => r.hours.map((h) => value(h) || 0)));
@@ -1265,11 +1299,11 @@
       value: (h) => h.on_floor,
       cut: (h) => (h.staff_scheduled || 0) - (isNum(h.recommended) ? h.recommended : (h.staff_scheduled || 0)),
       label: (r) => esc(fmtDay(r.date, { weekday: 'short', month: 'short', day: 'numeric' })),
-      cellTitle: (r, h) => `${fmtDayShort(r.date)} ${fmtHour(h.hour)}: about ${fmtInt(h.on_floor)} guests on the floor, ${h.staff_scheduled} staff scheduled, ${h.recommended} within the labor budget`,
+      cellTitle: (r, h) => `${fmtDayShort(r.date)} ${fmtHour(h.hour)}: about ${fmtInt(h.on_floor)} walk-ins on the floor, ${h.staff_scheduled} staff scheduled, ${h.recommended} within the labor budget`,
     });
     return section(
       'Next 7 days, hour by hour',
-      'Expected guests on the floor each hour; darker is busier. An outlined hour has more staff scheduled than its share of the labor budget pays for, and the small number is how many fewer are enough.',
+      'Expected walk-ins on the floor each hour; darker is busier. An outlined hour has more staff scheduled than its share of the labor budget pays for, and the small number is how many fewer are enough.',
       grid,
     );
   }
@@ -1281,11 +1315,11 @@
       tone: 'sky',
       value: (h) => h.arrivals,
       label: (r) => `${WEEKDAY_NAMES[r.weekday]} <span class="muted">${r.days} day${r.days === 1 ? '' : 's'}</span>`,
-      cellTitle: (r, h) => `${WEEKDAY_NAMES[r.weekday]} ${fmtHour(h.hour)}: ${h.arrivals} guests arriving on average, ${h.on_floor} on the floor`,
+      cellTitle: (r, h) => `${WEEKDAY_NAMES[r.weekday]} ${fmtHour(h.hour)}: ${h.arrivals} walk-ins arriving on average, ${h.on_floor} on the floor`,
     });
     return section(
       'A usual week',
-      `Average guests arriving each hour on each weekday, from the ${usual.days} reported days in the last six weeks. Darker is busier.`,
+      `Average walk-ins arriving each hour on each weekday, from the ${usual.days} reported days in the last six weeks. Darker is busier.`,
       grid,
     );
   }
@@ -1315,9 +1349,9 @@
     const why = day && day.forecast && day.forecast.why;
     if (!why) return '';
     const comparable = why.comparable || {};
-    let text = `The forecast of ${fmtInt(why.guests)} guests was made ${why.made_at ? fmtStamp(why.made_at, data.timezone) : 'before opening'} from ${comparableBasis(day.date, comparable)}`;
-    if (isNum(comparable.avg_guests)) text += ` (${fmtInt(comparable.avg_guests)} guests on average)`;
-    if (isNum(why.booked_guests)) text += ` and the ${fmtInt(why.booked_guests)} guests already booked`;
+    let text = `The forecast of ${fmtInt(why.guests)} walk-ins was made ${why.made_at ? fmtStamp(why.made_at, data.timezone) : 'before opening'} from ${comparableBasis(day.date, comparable)}`;
+    if (isNum(comparable.avg_guests)) text += ` (${fmtInt(comparable.avg_guests)} walk-ins on average)`;
+    if (isNum(why.booked_guests)) text += ` and the ${fmtInt(why.booked_guests)} walk-ins already booked`;
     text += '.';
     const outcome = day.forecast.outcome;
     if (outcome && outcome.hours && outcome.hours.length) {
@@ -1327,7 +1361,7 @@
     return `<div class="wrap why-teaser"><p>${esc(text)} <button type="button" class="btn-link" data-goto="forecasts" data-date="${day.date}">See why</button></p></div>`;
   }
 
-  /** The comparable days' guests as bars, their average as a line, then the forecast with its booked share. */
+  /** The comparable days' walk-ins as bars, their average as a line, then the forecast with its booked share. */
   function comparableChart(why) {
     const days = (why.comparable.days || []).slice().reverse();
     const cols = [
@@ -1343,7 +1377,7 @@
     const y = (v) => floor - (Math.max(0, v) / max) * (floor - top);
     const step = width / cols.length;
     const barW = step * 0.56;
-    const parts = [`<svg class="cmp-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Guests on the comparable days and the forecast of ${fmtInt(why.guests)}`)}">`,
+    const parts = [`<svg class="cmp-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(`Walk-ins on the comparable days and the forecast of ${fmtInt(why.guests)}`)}">`,
       `<line class="pit-floor" x1="0" x2="${width}" y1="${floor}" y2="${floor}"></line>`];
     cols.forEach((c, i) => {
       const x = step * i + (step - barW) / 2;
@@ -1379,8 +1413,8 @@
     }
     const comparable = why.comparable || { days: [] };
     const title = day
-      ? `Why the forecast said ${fmtInt(why.guests)} guests and ${fmtMoney(why.revenue)}`
-      : `Why ${fmtDayLong(date)} is expected to bring ${fmtInt(why.guests)} guests`;
+      ? `Why the forecast said ${fmtInt(why.guests)} walk-ins and ${fmtMoney(why.revenue)}`
+      : `Why ${fmtDayLong(date)} is expected to bring ${fmtInt(why.guests)} walk-ins`;
     const ruleText = comparable.rule === 'holiday_weekends'
       ? 'It is a weekday holiday, so the forecast learned from recent weekend days, when traffic behaves the same way.'
       : `It learned from ${comparableBasis(date, comparable)}, skipping holidays.`;
@@ -1389,28 +1423,28 @@
       <td>${d.reported ? fmtMoney(d.net_revenue) : DASH}</td><td>${d.reported ? fmtInt(d.walk_ins) : DASH}</td></tr>`).join('');
     const bookings = `${fmtInt(why.advance_bookings)} booking${why.advance_bookings === 1 ? '' : 's'}`;
     const guestsStep = isNum(why.booked_guests)
-      ? `${fmtInt(why.booked_guests)} guests were already booked (${bookings}), and about ${fmtInt(why.walk_in_guests)} more were expected to walk in, hour by hour, as on the comparable days.`
-      : `Guests are what was booked (${bookings}) plus the usual walk-ins for each hour on the comparable days.`;
+      ? `${fmtInt(why.booked_guests)} walk-ins were already booked (${bookings}), and about ${fmtInt(why.walk_in_guests)} more were expected on the day, hour by hour, as on the comparable days.`
+      : `Walk-ins are what was booked (${bookings}) plus the usual same-day arrivals for each hour on the comparable days.`;
     const factor = isNum(why.revenue_factor) ? why.revenue_factor.toFixed(2) : DASH;
     const revenueStep = {
-      scaled: `Revenue of ${fmtMoney(why.revenue)} is the comparable days' average of ${fmtMoney(comparable.avg_revenue)}, scaled by expected guests against their average (x${factor}).`,
+      scaled: `Revenue of ${fmtMoney(why.revenue)} is the comparable days' average of ${fmtMoney(comparable.avg_revenue)}, scaled by expected walk-ins against their average (x${factor}).`,
       bookings: `Bookings already came to more than a normal day, so revenue of ${fmtMoney(why.revenue)} is the booked value.`,
       no_history: `No comparable days were reported yet, so revenue of ${fmtMoney(why.revenue)} is only what was booked.`,
     }[why.revenue_rule] || '';
     const peaks = (why.peak_hours || []).map((p) => `${fmtHour(p.hour)} (${fmtInt(p.arrivals)})`).join(', ');
     const equation = isNum(why.booked_guests)
       ? `<span class="term"><strong>${fmtInt(why.booked_guests)}</strong> already booked</span><span class="op" aria-hidden="true">+</span>
-         <span class="term"><strong>${fmtInt(why.walk_in_guests)}</strong> expected walk-ins</span><span class="op" aria-hidden="true">=</span>`
+         <span class="term"><strong>${fmtInt(why.walk_in_guests)}</strong> expected on the day</span><span class="op" aria-hidden="true">=</span>`
       : '';
     const body = `
       <p class="section-lede">${esc(madeText(why, data.timezone))} ${esc(ruleText)}</p>
-      <div class="equation">${equation}<span class="term"><strong>${fmtInt(why.guests)}</strong> guests</span>
+      <div class="equation">${equation}<span class="term"><strong>${fmtInt(why.guests)}</strong> walk-ins</span>
         <span class="term"><strong>${fmtMoney(why.revenue)}</strong> net revenue</span></div>
       <div class="why-grid">
         <div>
           <h3 class="fig-title">What it learned from</h3>
           ${comparableChart(why)}
-          <div class="table-wrap"><table class="compact"><thead><tr><th scope="col">Day</th><th scope="col">Guests</th><th scope="col">Net revenue</th><th scope="col">Walk-ins</th></tr></thead>
+          <div class="table-wrap"><table class="compact"><thead><tr><th scope="col">Day</th><th scope="col">Walk-ins</th><th scope="col">Net revenue</th><th scope="col">Same-day bookings</th></tr></thead>
             <tbody>${rows}<tr class="total"><td>Average</td><td>${fmtInt(comparable.avg_guests)}</td><td>${fmtMoney(comparable.avg_revenue)}</td><td></td></tr></tbody></table></div>
         </div>
         <div>
@@ -1418,7 +1452,7 @@
           <ol class="list-steps">
             <li>${esc(guestsStep)}</li>
             <li>${esc(revenueStep)}</li>
-            ${peaks ? `<li>${esc(`Busiest hours expected, guests arriving: ${peaks}.`)}</li>` : ''}
+            ${peaks ? `<li>${esc(`Busiest hours expected, walk-ins arriving: ${peaks}.`)}</li>` : ''}
             <li>${esc(`Labor at ${fmtPct(why.labor_pct)} of revenue with ${fmtHours(why.scheduled_hours)} scheduled in 7shifts.`)}</li>
           </ol>
         </div>
@@ -1442,7 +1476,7 @@
     const direction = g.change > 0 ? 'busier than' : g.change < 0 ? 'quieter than' : 'the same as';
     const weekday = fmtDay(day.date, { weekday: 'long' });
     const pct = isNum(g.change_pct) ? `, ${fmtSigned(g.change_pct, (v) => `${v.toFixed(0)}%`)}` : '';
-    const lede = `${fmtInt(g.actual)} guests came against ${fmtInt(g.expected)} expected (${fmtSigned(g.change, fmtInt)}${pct}), and net revenue was ${fmtMoney(rev.actual)} against ${fmtMoney(rev.expected)} (${fmtSigned(rev.change, fmtMoney)}).`;
+    const lede = `${fmtInt(g.actual)} walk-ins came against ${fmtInt(g.expected)} expected (${fmtSigned(g.change, fmtInt)}${pct}), and net revenue was ${fmtMoney(rev.actual)} against ${fmtMoney(rev.expected)} (${fmtSigned(rev.change, fmtMoney)}).`;
     const blocks = [
       ['Arrivals by hour', reasonRows(outcome.hours, (n) => fmtHour(Number(n)),
         (r) => `${fmtInt(r.actual)} arrived, ${fmtInt(r.expected)} expected (${fmtSigned(r.change, fmtInt)})`)],
@@ -1455,7 +1489,7 @@
       .join('');
     const booked = outcome.advance_bookings || {};
     const walk = outcome.walk_ins || {};
-    const extra = `Advance bookings: ${fmtInt(booked.when_forecast)} on the books when the forecast was made, ${fmtInt(booked.on_the_day)} by the day. Walk-ins: ${fmtInt(walk.on_the_day)}${isNum(walk.usual) ? ` against a usual ${fmtInt(walk.usual)}` : ''}.`;
+    const extra = `Advance bookings: ${fmtInt(booked.when_forecast)} on the books when the forecast was made, ${fmtInt(booked.on_the_day)} by the day. Same-day bookings: ${fmtInt(walk.on_the_day)}${isNum(walk.usual) ? ` against a usual ${fmtInt(walk.usual)}` : ''}.`;
     return section(`What made ${fmtDayLong(day.date)} ${direction} forecast`, lede,
       `<div class="why-grid">${blocks}</div><p class="section-lede outcome-extra">${esc(extra)}</p>`, 'band-lilac');
   }
@@ -1515,9 +1549,9 @@
     const max = niceMax(Math.max(arrived, expected));
     const fr = frame(max, fmtInt, rows.map((r) => fmtHour(r.hour)), rows.length > 8 ? 2 : 1);
     const points = (values) => values.map((v, i) => (isNum(v) ? { x: fr.x(i), y: fr.y(v) } : null));
-    const svg = `${svgOpen(`Running total of guests arriving on ${fmtDayLong(day.date)} against the forecast`)}${fr.svg}
+    const svg = `${svgOpen(`Running total of walk-ins arriving on ${fmtDayLong(day.date)} against the forecast`)}${fr.svg}
       <path class="ln forecast" d="${pathOf(points(forecast))}"></path><path class="ln actual" d="${pathOf(points(actual))}"></path></svg>`;
-    return figure('Guests through the day', `${fmtInt(arrived)} arrived ${day.in_progress && !day.after_close ? 'so far ' : ''}against ${fmtInt(expected)} in the forecast for the whole day.`, svg,
+    return figure('Walk-ins through the day', `${fmtInt(arrived)} arrived ${day.in_progress && !day.after_close ? 'so far ' : ''}against ${fmtInt(expected)} in the forecast for the whole day.`, svg,
       legendKey('dash-key', 'actual', 'Arrived') + legendKey('dash-key', 'forecast', 'Forecast'));
   }
 
@@ -1536,13 +1570,13 @@
       const v = values[i];
       const top = Math.min(y(v), mid);
       const x = FIG.left + step * i + (step - barW) / 2;
-      const label = `${fmtDayShort(d.date)}: ${fmtInt(d.guests)} guests against ${fmtInt(d.forecast.guests)} forecast (${fmtSigned(v, (n) => `${n.toFixed(0)}%`)})`;
+      const label = `${fmtDayShort(d.date)}: ${fmtInt(d.guests)} walk-ins against ${fmtInt(d.forecast.guests)} forecast (${fmtSigned(v, (n) => `${n.toFixed(0)}%`)})`;
       const tick = i % 2 === 0 || i === days.length - 1 ? `<text class="ax-label x" x="${(x + barW / 2).toFixed(1)}" y="${FIG.h - FIG.bottom + 18}">${esc(shortDate(d.date))}</text>` : '';
       return `<rect class="${v >= 0 ? 'bar-up' : 'bar-down'}" x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, Math.abs(y(v) - mid)).toFixed(1)}" rx="3"><title>${esc(label)}</title></rect>${tick}`;
     }).join('');
     const busier = values.filter((v) => v > 0).length;
-    return figure('Busier or quieter than forecast', `Guests against the forecast made before each day: ${busier} of ${days.length} days came in busier.`,
-      `${svgOpen('Each day\'s guests against its forecast, in percent')}${grid}${bars}</svg>`,
+    return figure('Busier or quieter than forecast', `Walk-ins against the forecast made before each day: ${busier} of ${days.length} days came in busier.`,
+      `${svgOpen('Each day\'s walk-ins against its forecast, in percent')}${grid}${bars}</svg>`,
       legendKey('dot', 'bar-up-key', 'Busier than forecast') + legendKey('dot', 'bar-down-key', 'Quieter than forecast'));
   }
 
@@ -1653,6 +1687,7 @@
   }
 
   function onAppClick(event) {
+    if (!event.target.closest('.info-btn, .info-tip')) closeInfo();
     const el = event.target.closest('[data-goto], [data-tab], [data-focus], [data-shift], [data-metric], [data-action]');
     if (!el || el.disabled) return;
     if (el.dataset.goto) {
@@ -1664,7 +1699,8 @@
     else if (el.dataset.metric) {
       state.metric = el.dataset.metric;
       render(false);
-    } else if (el.dataset.action === 'sign-out') signOut();
+    } else if (el.dataset.action === 'info') toggleInfo(el);
+    else if (el.dataset.action === 'sign-out') signOut();
     else if (el.dataset.action === 'latest') setFocus(state.data.focus_date, false);
     else if (el.dataset.action === 'show-all-attention') {
       state.showAllAttention = true;
@@ -1677,6 +1713,7 @@
   }
 
   function onAppKeydown(event) {
+    if (event.key === 'Escape') closeInfo();
     const tab = event.target.closest('.tab');
     if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();

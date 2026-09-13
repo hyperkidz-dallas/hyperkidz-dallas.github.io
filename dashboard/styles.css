@@ -502,6 +502,18 @@ td.notes { min-width: 24rem; white-space: normal; text-align: left; color: var(-
 .kv div { padding-top: 12px; }
 .kv dt { font-size: var(--step--1); font-weight: 600; color: var(--ink-2); }
 .kv dd { margin: 2px 0 0; font-family: var(--font-display); font-size: var(--step-2); line-height: 1.1; }
+.info-btn {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; margin: 0 0 0 6px; padding: 0;
+  border: 1.5px solid var(--ink-3); border-radius: 50%; background: var(--surface); color: var(--ink-2);
+  font: 700 11px/1 var(--font-body); vertical-align: 1px; cursor: pointer;
+}
+.info-btn:hover, .info-btn[aria-expanded="true"] { border-color: var(--lilac-strong); background: var(--lilac); color: var(--lilac-ink); }
+.info-btn:focus-visible { outline: 2px solid var(--sky-strong); outline-offset: 2px; }
+.info-tip {
+  display: block; max-width: 36ch; margin: 6px 0 4px; padding: 10px 12px; border-radius: 10px;
+  background: var(--ink); color: var(--surface); font: 400 var(--step--1)/1.45 var(--font-body); text-align: left;
+}
+.info-tip[hidden] { display: none; }
 tr.total td { font-weight: 700; border-top: 2px solid var(--rule); }
 
 /* ---------- staff, calendar, analysis, updates ---------- */
