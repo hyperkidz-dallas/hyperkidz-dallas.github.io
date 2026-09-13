@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Hyper Kidz Dallas dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23F04E98'/%3E%3Ccircle cx='22' cy='20' r='8' fill='%23fff' opacity='.5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Rethink+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div id="boot-view" class="boot">
+  <img src="hyperkidz-logo.png" alt="Hyper Kidz" width="260" height="53">
+  <p>Opening the numbers…</p>
+</div>
+
+<main id="login-view" class="login" hidden>
+  <div class="login-card">
+    <img class="login-logo" src="hyperkidz-logo.png" alt="Hyper Kidz, the ultimate indoor playground" width="356" height="73">
+    <h1 class="login-title">Dallas daily numbers</h1>
+    <p class="login-lede">Guests, revenue and staffing from ROLLER and 7shifts, updated after the mid-day check-in and after close.</p>
+    <form id="login-form" novalidate>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label class="remember"><input id="remember" type="checkbox"> Keep me signed in on this device</label>
+      <button id="login-button" class="btn-primary" type="submit">Sign in</button>
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+    </form>
+  </div>
+</main>
+
+<div id="app" hidden></div>
+
+<noscript><p class="noscript">This dashboard needs JavaScript to unlock the numbers.</p></noscript>
+</body>
+</html>
