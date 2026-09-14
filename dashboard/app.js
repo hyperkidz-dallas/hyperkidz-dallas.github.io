@@ -493,7 +493,7 @@
     const gap = 8;
     const edge = 12;
     const rect = button.getBoundingClientRect();
-    tip.style.maxWidth = `${Math.min(240, window.innerWidth - edge * 2)}px`;
+    tip.style.maxWidth = `${Math.min(320, window.innerWidth - edge * 2)}px`;
     const { offsetWidth: width, offsetHeight: height } = tip;
     const left = Math.min(Math.max(edge, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - edge);
     const roomBelow = rect.bottom + gap + height + edge <= window.innerHeight;
@@ -603,15 +603,15 @@
       ? `Expected at close ${fmtInt(soFar.expected_total_guests)}`
       : forecast ? `Forecast ${fmtInt(forecast.guests)}` : `${fmtInt(day.walk_ins)} same-day bookings`;
     const revenueNote = soFar
-      ? `Expected at close ${fmtMoney(soFar.expected_total_revenue)}`
-      : forecast ? `Forecast ${fmtMoney(forecast.revenue)}` : `After ${fmtMoney(day.refunds)} in refunds`;
+      ? `Before tax, expected at close ${fmtMoney(soFar.expected_total_revenue)}`
+      : forecast ? `Before tax, forecast ${fmtMoney(forecast.revenue)}` : `Before tax, after ${fmtMoney(day.refunds)} in refunds`;
     const rows = [
       ['Walk-ins', fmtInt(day.guests), guestsNote, 'walk_ins'],
       ['Total guests', fmtInt(day.passes), 'Every pass, adults and memberships included', 'total_guests'],
       ['Check-ins', fmtInt(day.check_ins), isNum(day.check_ins) ? `Tickets redeemed${soFar ? ' so far' : ''}` : 'Not available yet', 'check_ins'],
       ['Net revenue', fmtMoney(day.net_revenue), revenueNote, 'net_revenue'],
-      ['ROLLER revenue', fmtMoney(day.roller_revenue), isNum(day.roller_revenue) ? 'As on ROLLER\'s Revenue tile' : 'Not available yet', 'roller_revenue'],
-      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken${soFar ? ' so far' : ''}, ${fmtMoney(day.tips)} in tips left out` : 'Not available yet', 'funds_received'],
+      ['ROLLER revenue', fmtMoney(day.roller_revenue), isNum(day.roller_revenue) ? 'Before tax, as on ROLLER\'s Revenue tile' : 'Not available yet', 'roller_revenue'],
+      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken${soFar ? ' so far' : ''}, tax included, ${fmtMoney(day.tips)} tips left out` : 'Not available yet', 'funds_received'],
       ['Labor cost', fmtMoney(day.actual_labor), `${fmtPct(day.labor_pct)} of revenue, target ${fmtPct(data.targets.labor_pct)}`, 'labor_cost'],
       ['Labor hours', fmtHours(day.actual_hours), `${fmtHours(day.scheduled_hours)} scheduled`, 'labor_hours'],
     ];
@@ -851,7 +851,7 @@
         <th scope="col">${lastWeek ? esc(fmtDayShort(lastWeek.date)) : 'Last week'}</th><th scope="col">Change</th></tr></thead>
         <tbody>${categoryRows}</tbody></table></div>`),
       section('Payments taken', isNum(day.funds_received)
-        ? 'Every payment taken this day minus tips, whatever day the booking is for. It matches ROLLER\'s Funds received.'
+        ? 'Every payment taken this day, sales tax included and tips left out, whatever day the booking is for. It matches ROLLER\'s Funds received.'
         : 'Not available yet.', methods.length
         ? `<ul class="list-plain">${methods.map(([method, amount]) => `<li><span class="list-when">${esc(method)}</span><span class="list-detail">${fmtCents(amount)}</span></li>`).join('')}</ul>`
         : '', ''),
