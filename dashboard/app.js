@@ -468,22 +468,14 @@
     </div></div>`;
   }
 
-  /** An "i" button by a label that opens where the number comes from (``data.terms``, from src/terms.py). */
-  function infoTip(term, extra = '') {
+  /** An "i" button by a label; it opens a small popover saying what the number covers and where it comes from
+   * (``data.terms``, from src/terms.py). */
+  function infoTip(term) {
     const entry = term && ((state.data && state.data.terms) || {})[term];
     if (!entry) return '';
     const id = `tip-${term}-${++tipSerial}`;
-    return `<button type="button" class="info-btn" data-action="info" aria-expanded="false" aria-controls="${id}" aria-label="${esc(`Where ${entry.label} comes from`)}">i</button>`
-      + `<span class="info-tip" id="${id}" role="note" hidden>${esc(entry.info)}${extra ? ` ${esc(extra)}` : ''}</span>`;
-  }
-
-  /** Total stock's popover detail: the day's food and drink and retail amounts, and the ROLLER product groups. */
-  function stockDetail(data, day) {
-    const split = (day && day.stock_split) || {};
-    const amounts = isNum(split.food) || isNum(split.retail)
-      ? `This day: food and drink ${fmtCents(split.food || 0)}, retail ${fmtCents(split.retail || 0)}.` : '';
-    const groups = ((data && data.category_groups) || {}).stock || [];
-    return [amounts, groups.length ? `ROLLER product groups: ${groups.join(', ')}.` : ''].filter(Boolean).join(' ');
+    return `<button type="button" class="info-btn" data-action="info" aria-expanded="false" aria-controls="${id}" aria-label="${esc(`About ${entry.label}`)}">i</button>`
+      + `<span class="info-tip" id="${id}" role="tooltip" hidden>${esc(entry.info)}</span>`;
   }
 
   function closeInfo(except) {
@@ -495,6 +487,21 @@
     });
   }
 
+  /** Floats an open popover by its button and inside the screen. It is fixed-position, so a table that scrolls
+   * sideways cannot clip it, and it opens above the button when there is no room below. */
+  function placeInfo(button, tip) {
+    const gap = 8;
+    const edge = 12;
+    const rect = button.getBoundingClientRect();
+    tip.style.maxWidth = `${Math.min(320, window.innerWidth - edge * 2)}px`;
+    const { offsetWidth: width, offsetHeight: height } = tip;
+    const left = Math.min(Math.max(edge, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - edge);
+    const roomBelow = rect.bottom + gap + height + edge <= window.innerHeight;
+    const top = roomBelow || rect.top - gap - height < edge ? rect.bottom + gap : rect.top - gap - height;
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+  }
+
   function toggleInfo(button) {
     const tip = document.getElementById(button.getAttribute('aria-controls'));
     if (!tip) return;
@@ -502,6 +509,7 @@
     closeInfo(button);
     button.setAttribute('aria-expanded', String(open));
     tip.hidden = !open;
+    if (open) placeInfo(button, tip);
   }
 
   function section(title, lede, body, band) {
@@ -600,8 +608,10 @@
     const rows = [
       ['Walk-ins', fmtInt(day.guests), guestsNote, 'walk_ins'],
       ['Total guests', fmtInt(day.passes), 'Every pass, adults and memberships included', 'total_guests'],
+      ['Check-ins', fmtInt(day.check_ins), isNum(day.check_ins) ? `Tickets redeemed${soFar ? ' so far' : ''}` : 'Not available yet', 'check_ins'],
       ['Net revenue', fmtMoney(day.net_revenue), revenueNote, 'net_revenue'],
-      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken, ${fmtMoney(day.tips)} in tips left out` : 'Known after close', 'funds_received'],
+      ['ROLLER revenue', fmtMoney(day.roller_revenue), isNum(day.roller_revenue) ? 'As on ROLLER\'s Revenue tile' : 'Not available yet', 'roller_revenue'],
+      ['Funds received', fmtMoney(day.funds_received), isNum(day.funds_received) ? `Payments taken${soFar ? ' so far' : ''}, ${fmtMoney(day.tips)} in tips left out` : 'Not available yet', 'funds_received'],
       ['Labor cost', fmtMoney(day.actual_labor), `${fmtPct(day.labor_pct)} of revenue, target ${fmtPct(data.targets.labor_pct)}`, 'labor_cost'],
       ['Labor hours', fmtHours(day.actual_hours), `${fmtHours(day.scheduled_hours)} scheduled`, 'labor_hours'],
     ];
@@ -785,6 +795,7 @@
     const numbers = [
       ['Walk-ins', fmtInt(day.guests), 'walk_ins'],
       ['Total guests', fmtInt(day.passes), 'total_guests'],
+      ['Check-ins', fmtInt(day.check_ins), 'check_ins'],
       ['Same-day bookings', fmtInt(day.walk_ins), 'same_day_bookings'],
       ['Advance bookings', fmtInt(day.advance_bookings), 'advance_bookings'],
       ['Memberships sold', fmtInt(day.memberships_sold), 'memberships_sold'],
@@ -817,13 +828,14 @@
     const before = (lastWeek && lastWeek.revenue_by_category) || {};
     const gross = Object.values(categories).reduce((sum, v) => sum + (v || 0), 0);
     const names = Object.keys({ ...categories, ...before }).sort((a, b) => (categories[b] || 0) - (categories[a] || 0));
-    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}${name === 'stock' ? infoTip('total_stock', stockDetail(data, day)) : ''}</td><td>${fmtMoney(categories[name] || 0)}</td>
+    const categoryRows = names.map((name) => `<tr><td>${esc(categoryLabel(name))}${name === 'stock' ? infoTip('total_stock') : ''}</td><td>${fmtMoney(categories[name] || 0)}</td>
       <td>${gross ? fmtPct(((categories[name] || 0) / gross) * 100) : DASH}</td>
       <td>${lastWeek ? fmtMoney(before[name] || 0) : DASH}</td>
       <td>${lastWeek ? fmtSigned((categories[name] || 0) - (before[name] || 0), fmtMoney) : DASH}</td></tr>`).join('');
     const methods = Object.entries(day.payments_by_method || {});
     const numbers = [
       ['Net revenue', fmtMoney(day.net_revenue), 'net_revenue'],
+      ['ROLLER revenue', fmtMoney(day.roller_revenue), 'roller_revenue'],
       ['Gross revenue', fmtMoney(day.gross_revenue)],
       ['Refunds', fmtMoney(day.refunds)],
       ['Funds received', fmtMoney(day.funds_received), 'funds_received'],
@@ -840,10 +852,10 @@
         <tbody>${categoryRows}</tbody></table></div>`),
       section('Payments taken', isNum(day.funds_received)
         ? 'Every payment taken this day minus tips, whatever day the booking is for. It matches ROLLER\'s Funds received.'
-        : 'Payments are added up after close.', methods.length
+        : 'Not available yet.', methods.length
         ? `<ul class="list-plain">${methods.map(([method, amount]) => `<li><span class="list-when">${esc(method)}</span><span class="list-detail">${fmtCents(amount)}</span></li>`).join('')}</ul>`
         : '', ''),
-      section('Figures only ROLLER shows', '', `<p class="section-lede">Check-ins and ROLLER's attendance-based revenue are not available from ROLLER's API.${roller ? ` <a href="${esc(roller)}" target="_blank" rel="noopener noreferrer">Open ROLLER's dashboard</a>.` : ''}</p>`),
+      roller ? section('ROLLER dashboard', '', `<p class="section-lede">Funds received, check-ins and ROLLER revenue here are the figures on ROLLER's Daily Summary. <a href="${esc(roller)}" target="_blank" rel="noopener noreferrer">Open ROLLER's dashboard</a>.</p>`) : '',
       weeksSection(data, day.date, 'net_revenue'),
     ].join('');
   }
@@ -1732,6 +1744,9 @@
     app.addEventListener('click', onAppClick);
     app.addEventListener('change', onAppChange);
     app.addEventListener('keydown', onAppKeydown);
+    // A popover floats at a fixed spot, so any scroll or resize closes it rather than leaving it behind.
+    document.addEventListener('scroll', () => closeInfo(), { capture: true, passive: true });
+    window.addEventListener('resize', () => closeInfo());
     if (!window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined') {
       showLogin('This browser cannot open the dashboard. Update it, or use a current Chrome, Safari, Edge or Firefox.');
       $('#login-button').disabled = true;
