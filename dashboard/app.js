@@ -493,7 +493,7 @@
     const gap = 8;
     const edge = 12;
     const rect = button.getBoundingClientRect();
-    tip.style.maxWidth = `${Math.min(320, window.innerWidth - edge * 2)}px`;
+    tip.style.maxWidth = `${Math.min(240, window.innerWidth - edge * 2)}px`;
     const { offsetWidth: width, offsetHeight: height } = tip;
     const left = Math.min(Math.max(edge, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - edge);
     const roomBelow = rect.bottom + gap + height + edge <= window.innerHeight;
